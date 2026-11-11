@@ -99,3 +99,12 @@ body.drop { outline: 3px dashed var(--random); outline-offset: -8px; }
 .matrix .globals span, .matrix .globals small, .matrix .hint, .matrix .help { color: var(--muted); }
 .matrix .hint { font-size: 12px; margin: 12px 0 0; }
 .matrix .hint button { margin-left: 8px; padding: 4px 10px; font-size: 12px; }
+
+.midibar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: -4px 0 14px; font-size: 13px; color: var(--muted); }
+.midibar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--track); transition: background 0.5s; flex: none; }
+.midibar .dot.ok { background: #4fbf7a; }
+.midibar .dot.bad { background: #e5574f; }
+.midibar .dot.flash { background: var(--random); transition: none; }
+.midibar.problem #midiports { color: #f0a09b; }
+.midibar #midilast { color: var(--ink); font-variant-numeric: tabular-nums; }
+.midibar button { padding: 3px 10px; font-size: 12px; }

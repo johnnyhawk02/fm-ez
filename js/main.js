@@ -330,7 +330,29 @@ const midi = new Midi({
   onKnob: hwKnob,
   onStatus: setStatus,
   onLearnStep: (i) => knobEls.forEach((el, k) => el.classList.toggle('learn', k === i)),
+  onDiag: renderMidiBar,
 });
+
+const midiBar = document.getElementById('midibar');
+const midiDot = document.getElementById('mididot');
+let flashTimer = 0;
+function renderMidiBar(d) {
+  const ports = d.ports.map((p) => `${p.name}${p.state === 'connected' ? '' : ` (${p.state})`}`);
+  let text;
+  if (d.problem) text = d.problem;
+  else if (!ports.length) text = 'MIDI is on but the browser sees no input ports. Plug in the PC4 and check it is not used by another app (a DAW can hold it).';
+  else text = `MIDI inputs: ${ports.join(', ')}`;
+  document.getElementById('midiports').textContent = text;
+  midiBar.classList.toggle('problem', !!d.problem || !ports.length);
+  document.getElementById('midilast').textContent = d.count ? `Last: ${d.last} (${d.count} messages)` : (ports.length && !d.problem ? 'No messages yet: turn a knob or press a key' : '');
+  midiDot.className = `dot ${d.problem || !ports.length ? 'bad' : 'ok'}`;
+  if (d.flash) {
+    midiDot.classList.add('flash');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => midiDot.classList.remove('flash'), 120);
+  }
+}
+document.getElementById('midiconnect').addEventListener('click', () => midi.start());
 // MIDI is requested straight away (Chrome may ask for permission), so it works
 // whichever way audio gets started.
 midi.start();

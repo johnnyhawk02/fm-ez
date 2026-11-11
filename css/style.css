@@ -79,3 +79,23 @@ body.drop { outline: 3px dashed var(--random); outline-offset: -8px; }
 .seg button:last-child { border-radius: 0 8px 8px 0; }
 .seg button.on { background: var(--ink); color: var(--bg); }
 .knob.learn { background: #e57a9b33; box-shadow: 0 0 0 2px var(--random) inset; }
+
+.matrix { position: fixed; inset: 0; background: #0009; display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.matrix[hidden] { display: none; }
+.matrix .panel { background: var(--panel); border: 1px solid var(--track); border-radius: 14px; padding: 16px 20px; max-width: min(900px, 100%); max-height: 90vh; overflow: auto; }
+.matrix h2 { margin: 0 0 12px; font-size: 18px; }
+.matrix h2 span { color: var(--muted); font-weight: normal; margin-left: 8px; }
+.matrix table { border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.matrix th, .matrix td { padding: 6px 10px; border-bottom: 1px solid var(--track); text-align: left; vertical-align: top; white-space: nowrap; }
+.matrix thead th { color: var(--muted); font-weight: normal; }
+.matrix tbody th small { display: block; color: var(--muted); font-weight: normal; }
+.matrix td b { display: block; font-weight: 600; }
+.matrix td small { color: var(--muted); }
+.matrix td.off { color: var(--track); }
+.matrix td.depth input { width: 110px; accent-color: var(--random); vertical-align: middle; }
+.matrix td.depth output { display: inline-block; width: 44px; text-align: right; }
+.matrix .globals { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 6px; }
+.matrix .globals li { display: grid; grid-template-columns: 180px 120px 1fr; gap: 8px; }
+.matrix .globals span, .matrix .globals small, .matrix .hint, .matrix .help { color: var(--muted); }
+.matrix .hint { font-size: 12px; margin: 12px 0 0; }
+.matrix .hint button { margin-left: 8px; padding: 4px 10px; font-size: 12px; }

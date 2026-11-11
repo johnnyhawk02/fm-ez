@@ -1,5 +1,7 @@
 import { KNOBS, ROWS, K, defaultMacros, makeVoicing, buildPatch, engineOf, methodOf, library, voiceIndex, neutralise } from './macros.js';
 import { ENGINES } from './engines.js';
+import { knobMatrixHTML } from './matrix.js';
+import { routing } from './macros.js';
 import { parseSysex } from './dx7.js';
 import { isCarrier } from './engines.js';
 import { randomise, morph, rng } from './random.js';
@@ -100,23 +102,84 @@ function renderKnob(i) {
     el.classList.remove('waiting');
   }
   el.querySelector('.value').textContent = KNOBS[i].fmt(v, state.macros);
+  if (matrixKnob >= 0) refreshMatrixSoon();
 }
 const renderAll = () => KNOBS.forEach((_, i) => renderKnob(i));
 
+// ---------- knob matrix (long press / right-click) ----------
+const ROUTING_KEY = 'fmez.routing.v1';
+try { Object.assign(routing, JSON.parse(localStorage.getItem(ROUTING_KEY)) || {}); } catch { /* none saved */ }
+const saveRouting = () => { try { localStorage.setItem(ROUTING_KEY, JSON.stringify(routing)); } catch { /* blocked */ } };
+const matrixEl = document.getElementById('matrix');
+let matrixKnob = -1;
+function openMatrix(i) {
+  matrixKnob = i;
+  matrixEl.querySelector('.panel').innerHTML = knobMatrixHTML(i, state);
+  matrixEl.hidden = false;
+}
+let matrixPending = false;
+function refreshMatrixSoon() {
+  if (matrixPending) return;
+  matrixPending = true;
+  requestAnimationFrame(() => { matrixPending = false; refreshMatrix(); });
+}
+function closeMatrix() { matrixKnob = -1; matrixEl.hidden = true; }
+function refreshMatrix() {
+  if (matrixKnob < 0) return;
+  // Don't rebuild while a depth slider is being dragged.
+  if (matrixEl.contains(document.activeElement) && document.activeElement.type === 'range') return;
+  matrixEl.querySelector('.panel').innerHTML = knobMatrixHTML(matrixKnob, state);
+}
+matrixEl.addEventListener('pointerdown', (e) => { if (e.target === matrixEl) closeMatrix(); });
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMatrix(); });
+matrixEl.addEventListener('input', (e) => {
+  if (e.target.type !== 'range') return;
+  const id = KNOBS[matrixKnob].id;
+  routing[id] = routing[id] || [1, 1, 1, 1, 1, 1];
+  routing[id][+e.target.dataset.op] = e.target.value / 100;
+  e.target.nextElementSibling.textContent = `${e.target.value}%`;
+  sendPatch();
+});
+matrixEl.addEventListener('change', (e) => {
+  if (e.target.type !== 'range') return;
+  const id = KNOBS[matrixKnob].id;
+  if (routing[id] && routing[id].every((w) => w === 1)) delete routing[id];
+  saveRouting();
+  e.target.blur();
+  refreshMatrix();
+});
+matrixEl.addEventListener('click', (e) => {
+  if (!e.target.classList.contains('reset-routing')) return;
+  delete routing[KNOBS[matrixKnob].id];
+  saveRouting(); sendPatch(); refreshMatrix();
+});
+
 function attachDrag(el, i) {
-  let startY = 0, startV = 0;
+  let startY = 0, startV = 0, pressTimer = null, moved = false;
   el.addEventListener('pointerdown', (e) => {
+    if (e.button === 2) return;
     startAudio();
     el.setPointerCapture(e.pointerId);
-    startY = e.clientY; startV = state.macros[i];
+    startY = e.clientY; startV = state.macros[i]; moved = false;
     el.classList.add('active');
+    // Hold still for half a second to open the matrix.
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      if (moved) return;
+      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+      el.classList.remove('active');
+      openMatrix(i);
+    }, 500);
   });
   el.addEventListener('pointermove', (e) => {
     if (!el.hasPointerCapture(e.pointerId)) return;
+    if (Math.abs(e.clientY - startY) > 4) { moved = true; clearTimeout(pressTimer); }
+    if (!moved) return;
     const fine = e.shiftKey ? 0.2 : 1;
     setKnob(i, startV + ((startY - e.clientY) / 200) * fine, 'ui');
   });
-  const end = (e) => { el.classList.remove('active'); if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); };
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); openMatrix(i); });
+  const end = (e) => { clearTimeout(pressTimer); el.classList.remove('active'); if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
   el.addEventListener('dblclick', () => setKnob(i, KNOBS[i].def, 'ui'));

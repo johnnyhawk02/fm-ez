@@ -93,21 +93,37 @@ export function neutralise(m) {
   m[K.pitchEnv] = 0;
 }
 
+// Per-operator routing, edited in the long-press matrix. routing[knobId][op]
+// scales how far that knob moves that operator away from its reference
+// (1 = normal, 0 = ignores the knob, -1 = opposite way). Missing = all 1.
+export const ROUTABLE = ['bright', 'harm', 'inharm', 'attack', 'decay', 'sustain', 'release', 'modDecay'];
+export const routing = {};
+function refOf(id, m) {
+  return engineOf(m).library && NEUTRAL.includes(id) ? 0.5 : KNOBS[K[id]].def;
+}
+// The knob value as operator `op` sees it.
+function per(m, id, op) {
+  const w = routing[id];
+  const v = m[K[id]];
+  if (!w || w[op] === 1) return v;
+  const ref = refOf(id, m);
+  return Math.min(1, Math.max(0, ref + (v - ref) * w[op]));
+}
+
 export function buildPatch(m, voicing, base) {
   const eng = engineOf(m);
   if (eng.library) return buildLibraryPatch(m, voicing, base || INIT_VOICE);
   const algoNum = pick(eng.algos, m[K.algo]);
   const algorithm = algoNum - 1;
-  const ratios = pick(eng.ratioSets, m[K.harm]);
-  const a = expo(eng.attack, m[K.attack]);
-  const d = expo(eng.decay, m[K.decay]);
-  const s = lin(eng.sustain, m[K.sustain]);
-  const r = expo(eng.release, m[K.release]);
-  const md = expo(eng.modDecay, m[K.modDecay]);
-  const index = eng.indexMax * Math.pow(m[K.bright], 1.5);
-  const inh = m[K.inharm];
-
-  const ops = ratios.map((ratio, i) => {
+  const ops = [0, 1, 2, 3, 4, 5].map((i) => {
+    const ratio = pick(eng.ratioSets, per(m, 'harm', i))[i];
+    const a = expo(eng.attack, per(m, 'attack', i));
+    const d = expo(eng.decay, per(m, 'decay', i));
+    const s = lin(eng.sustain, per(m, 'sustain', i));
+    const r = expo(eng.release, per(m, 'release', i));
+    const md = expo(eng.modDecay, per(m, 'modDecay', i));
+    const index = eng.indexMax * Math.pow(per(m, 'bright', i), 1.5);
+    const inh = per(m, 'inharm', i);
     const carrier = isCarrier(algorithm, i);
     let rr = ratio;
     if (!carrier || eng.inharmCarriers) rr *= 1 + inh * voicing.inharm[i] * (carrier ? 0.3 : 1);
@@ -135,11 +151,11 @@ export function buildPatch(m, voicing, base) {
 function buildLibraryPatch(m, voicing, voice) {
   const eng = engineOf(m);
   const algorithm = voice.algorithm;
-  const bright = mult(m[K.bright], 4);
-  const tA = mult(m[K.attack], 6), tD = mult(m[K.decay], 6), tR = mult(m[K.release], 6);
-  const tMD = mult(m[K.modDecay], 6), sMul = m[K.sustain] * 2;
-  const inh = m[K.inharm];
   const ops = voiceToOps(voice).map((op, i) => {
+    const bright = mult(per(m, 'bright', i), 4);
+    const tA = mult(per(m, 'attack', i), 6), tD = mult(per(m, 'decay', i), 6), tR = mult(per(m, 'release', i), 6);
+    const tMD = mult(per(m, 'modDecay', i), 6), sMul = per(m, 'sustain', i) * 2;
+    const inh = per(m, 'inharm', i);
     const carrier = isCarrier(algorithm, i);
     const ratio = carrier ? op.ratio : op.ratio * (1 + inh * voicing.inharm[i]);
     return {

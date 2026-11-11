@@ -78,3 +78,4 @@ body.drop { outline: 3px dashed var(--random); outline-offset: -8px; }
 .seg button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
 .seg button:last-child { border-radius: 0 8px 8px 0; }
 .seg button.on { background: var(--ink); color: var(--bg); }
+.knob.learn { background: #e57a9b33; box-shadow: 0 0 0 2px var(--random) inset; }

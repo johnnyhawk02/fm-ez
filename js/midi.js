@@ -3,15 +3,16 @@
 const STORE_KEY = 'fmez.ccmap.v2';
 
 export class Midi {
-  constructor({ onNoteOn, onNoteOff, onKnob, onStatus }) {
-    Object.assign(this, { onNoteOn, onNoteOff, onKnob, onStatus });
+  constructor({ onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep }) {
+    Object.assign(this, { onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep });
+    this.lastHint = -Infinity;
     this.map = load();
     this.learning = null; // { next: index }
   }
 
   async start() {
     if (!navigator.requestMIDIAccess) {
-      this.onStatus('No Web MIDI in this browser (use Chrome or Edge)');
+      this.onStatus('This browser has no Web MIDI (Safari). Use Chrome or Edge.');
       return;
     }
     try {
@@ -27,7 +28,7 @@ export class Midi {
       access.onstatechange = bind;
       bind();
     } catch (err) {
-      this.onStatus('MIDI access was refused');
+      this.onStatus('MIDI access was blocked. Allow MIDI for this site (lock icon in the address bar) and reload.');
     }
   }
 
@@ -42,24 +43,31 @@ export class Midi {
           this.learning.seen.add(key);
           this.map[key] = this.learning.next;
           this.learning.next++;
-          this.onStatus(`Learning: turn knob ${this.learning.next + 1} of 24`);
+          this.onStatus(`Learning: turn knob ${this.learning.next + 1} of 24 (row ${Math.floor(this.learning.next / 4) + 1}, knob ${(this.learning.next % 4) + 1})`);
+          this.onLearnStep(this.learning.next);
           if (this.learning.next >= 24) this.stopLearn();
         }
         return;
       }
       const idx = this.map[key];
       if (idx !== undefined) this.onKnob(idx, d2 / 127);
+      else if (performance.now() - this.lastHint > 2000) {
+        this.lastHint = performance.now();
+        this.onStatus(`CC ${d1} on channel ${ch + 1} isn't mapped yet. Click Learn PC4 and turn each knob once.`);
+      }
     }
   }
 
   startLearn() {
     this.map = {};
     this.learning = { next: 0, seen: new Set() };
-    this.onStatus('Learning: turn knob 1 of 24 (top-left), then along each row of 4, row by row');
+    this.onStatus('Learning: turn the highlighted knob (row 1, knob 1), then each knob along the row, row by row');
+    this.onLearnStep(0);
   }
 
   stopLearn() {
     this.learning = null;
+    this.onLearnStep(-1);
     save(this.map);
     this.onStatus(`Saved ${Object.keys(this.map).length} knob mappings`);
   }

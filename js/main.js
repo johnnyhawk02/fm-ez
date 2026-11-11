@@ -20,8 +20,14 @@ let audio = null;
 let voiceMode = 'poly';
 
 // ---------- audio ----------
-async function startAudio() {
-  if (audio) { if (audio.ctx.state !== 'running') audio.ctx.resume(); return; }
+// Browsers only allow audio after a click or key press, so this runs from those.
+let audioStarting = null;
+function startAudio() {
+  if (audio) { if (audio.ctx.state !== 'running') audio.ctx.resume(); return Promise.resolve(); }
+  if (!audioStarting) audioStarting = createAudio();
+  return audioStarting;
+}
+async function createAudio() {
   const ctx = new AudioContext({ latencyHint: 'interactive' });
   await ctx.audioWorklet.addModule('js/fm-processor.js');
   const node = new AudioWorkletNode(ctx, 'fm-processor', { numberOfInputs: 0, outputChannelCount: [2] });
@@ -253,13 +259,23 @@ window.addEventListener('keyup', (e) => {
 
 // ---------- buttons, midi ----------
 const midi = new Midi({
-  onNoteOn: (n, v) => { startAudio(); noteOn(n, v); },
+  onNoteOn: (n, v) => {
+    if (!audio || audio.ctx.state !== 'running') setStatus('MIDI note received. Click the page once to turn on audio.');
+    else noteOn(n, v);
+  },
   onNoteOff: noteOff,
   onKnob: hwKnob,
   onStatus: setStatus,
+  onLearnStep: (i) => knobEls.forEach((el, k) => el.classList.toggle('learn', k === i)),
 });
+// MIDI is requested straight away (Chrome may ask for permission), so it works
+// whichever way audio gets started.
+midi.start();
 
-document.getElementById('start').addEventListener('click', () => startAudio().then(() => midi.start()));
+document.getElementById('start').addEventListener('click', () => startAudio());
+// Any first click or key press turns audio on.
+window.addEventListener('pointerdown', () => startAudio(), { once: true });
+window.addEventListener('keydown', () => startAudio(), { once: true });
 document.getElementById('go').addEventListener('click', () => { startAudio(); fire(); });
 document.getElementById('undo').addEventListener('click', undo);
 document.getElementById('redo').addEventListener('click', redo);

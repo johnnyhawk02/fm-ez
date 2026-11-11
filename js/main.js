@@ -17,7 +17,7 @@ const slots = { A: null, B: null };
 const history = [];
 let future = [];
 let audio = null;
-let lastGo = 0;
+let voiceMode = 'poly';
 
 // ---------- audio ----------
 async function startAudio() {
@@ -27,6 +27,7 @@ async function startAudio() {
   const node = new AudioWorkletNode(ctx, 'fm-processor', { numberOfInputs: 0, outputChannelCount: [2] });
   node.connect(ctx.destination);
   audio = { ctx, node };
+  node.port.postMessage({ type: 'mode', mode: voiceMode });
   sendPatch();
   setStatus('Audio on. Play with A W S E D F T G Y H U J K, Z/X for octave.');
   document.body.classList.add('running');
@@ -293,6 +294,13 @@ async function loadFiles(files) {
   setStatus(`Loaded ${added} DX7 voices. Algorithm knob picks the voice; Go mutates it.`);
 }
 try { library.voices = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch { /* none saved */ }
+
+document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
+  voiceMode = btn.dataset.mode;
+  document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b === btn));
+  if (audio) audio.node.port.postMessage({ type: 'mode', mode: voiceMode });
+  setStatus(`Voice mode: ${btn.textContent}`);
+}));
 
 const fileInput = document.getElementById('file');
 document.getElementById('load').addEventListener('click', () => fileInput.click());

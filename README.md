@@ -10,6 +10,8 @@ Six-operator FM synth for the browser, built to be played from 24 knobs
   depth (Mod spread).
 - **Randomise:** Generate, Mutate, Harmonic, Breed (between stored A and B) and
   Row, with Amount, Lock rows, Morph A to B and 32 steps of undo.
+- **Voice modes:** Poly (8 voices), Mono legato (last-note priority, short
+  glide, envelopes don't restart) and Duo (two voices).
 - **Control:** Web MIDI notes and CCs (Chrome or Edge), with soft takeover so
   hardware knobs never make the sound jump. Computer keyboard: A W S E D F T G
   Y H U J K, Z and X change octave.
@@ -38,7 +40,9 @@ parameters:
 - **Breed** builds a child operator by operator from voices stored in A and B.
 - **Morph A>B** blends the two stored voices.
 
-Loaded banks are remembered in the browser. Not yet carried over from the DX7:
+Loaded banks are remembered in the browser. FM EZ sounds are stereo (carrier
+pairs and panned modulators), so they can't be saved back to DX7 format as they
+are; a mono conversion is possible later. Not yet carried over from the DX7:
 pitch envelope, LFO, keyboard scaling and per-operator velocity.
 
 ## PC4 setup

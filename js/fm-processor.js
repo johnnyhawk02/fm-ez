@@ -97,6 +97,7 @@ class Voice {
     this.phaseR = new Float64Array(6);  // second phase for carrier pairs
     this.fb = new Float32Array(2);
     this.pitchEnv = 0;
+    this.glide = 0;
     this.age = 0;
   }
 }
@@ -109,6 +110,8 @@ class FmProcessor extends AudioWorkletProcessor {
     this.lfoPhase = 0;
     this.lpL = 0; this.lpR = 0;
     this.counter = 0;
+    this.mode = 'poly'; // poly | mono (legato) | duo
+    this.held = [];     // held notes, newest last: { note, velocity }
     this.port.onmessage = (e) => this.onMessage(e.data);
   }
 
@@ -116,7 +119,14 @@ class FmProcessor extends AudioWorkletProcessor {
     if (msg.type === 'patch') this.setPatch(msg.patch);
     else if (msg.type === 'noteOn') this.noteOn(msg.note, msg.velocity);
     else if (msg.type === 'noteOff') this.noteOff(msg.note);
-    else if (msg.type === 'allOff') this.voices.forEach((v) => v.env.forEach((e) => e.gate(false)));
+    else if (msg.type === 'allOff') this.allOff();
+    else if (msg.type === 'debug') this.port.postMessage(this.voices.filter((v) => v.active).map((v) => ({ note: v.note, released: v.released, glide: +v.glide.toFixed(2) })));
+    else if (msg.type === 'mode') { this.mode = msg.mode; this.allOff(); }
+  }
+
+  allOff() {
+    this.held = [];
+    for (const v of this.voices) { v.released = true; v.env.forEach((e) => e.gate(false)); }
   }
 
   setPatch(p) {
@@ -169,9 +179,30 @@ class FmProcessor extends AudioWorkletProcessor {
 
   noteOn(note, velocity) {
     if (!this.patch) return;
-    let v = this.voices.find((x) => x.note === note && x.active);
-    if (!v) v = this.voices.find((x) => !x.active);
-    if (!v) v = this.voices.reduce((a, b) => (a.age < b.age ? a : b));
+    this.held = this.held.filter((h) => h.note !== note);
+    this.held.push({ note, velocity });
+    if (this.mode === 'mono') {
+      const v = this.voices[0];
+      if (v.active && !v.released && this.held.length > 1) return this.legato(v, note);
+      return this.trigger(v, note, velocity);
+    }
+    // Poly uses all voices; duophonic only the first two.
+    const pool = this.mode === 'duo' ? this.voices.slice(0, 2) : this.voices;
+    let v = pool.find((x) => x.note === note && x.active);
+    if (!v) v = pool.find((x) => !x.active);
+    if (!v) v = pool.find((x) => x.released);
+    if (!v) v = pool.reduce((a, b) => (a.age < b.age ? a : b));
+    this.trigger(v, note, velocity);
+  }
+
+  // Change pitch without restarting envelopes, with a short glide.
+  legato(v, note) {
+    v.glide += v.note - note;
+    v.note = note;
+  }
+
+  trigger(v, note, velocity) {
+    v.glide = 0;
     v.note = note;
     v.velocity = velocity;
     v.active = true;
@@ -189,6 +220,23 @@ class FmProcessor extends AudioWorkletProcessor {
   }
 
   noteOff(note) {
+    this.held = this.held.filter((h) => h.note !== note);
+    if (this.mode === 'mono') {
+      const v = this.voices[0];
+      if (v.note !== note || v.released) return;
+      // Fall back to the last key still held, legato.
+      if (this.held.length) return this.legato(v, this.held[this.held.length - 1].note);
+      v.released = true;
+      v.env.forEach((e) => e.gate(false));
+      return;
+    }
+    if (this.mode === 'duo') {
+      // A freed voice picks up a held note that lost its voice.
+      const v = this.voices.slice(0, 2).find((x) => x.active && x.note === note && !x.released);
+      const sounding = new Set(this.voices.slice(0, 2).filter((x) => x.active && !x.released).map((x) => x.note));
+      const waiting = [...this.held].reverse().find((h) => !sounding.has(h.note));
+      if (v && waiting) return this.legato(v, waiting.note);
+    }
     for (const v of this.voices) {
       if (v.active && v.note === note && !v.released) {
         v.released = true;
@@ -206,6 +254,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (!p) return true;
 
     const sr = sampleRate;
+    this.glideCoef = Math.exp(-128 / (0.05 * sr)); // ~50 ms legato glide per block
     const lfoInc = p.lfo.rate / sr;
     const pitchDecay = Math.exp(-1 / Math.max(1, p.pitchEnv.decay * sr / 4.6));
     const slots = this.slots;
@@ -214,7 +263,9 @@ class FmProcessor extends AudioWorkletProcessor {
 
     for (const v of this.voices) {
       if (!v.active) continue;
-      const base = 440 * Math.pow(2, (v.note - 69 + (p.transpose || 0)) / 12);
+      const base = 440 * Math.pow(2, (v.note - 69 + v.glide + (p.transpose || 0)) / 12);
+      v.glide *= this.glideCoef || 0;
+      if (Math.abs(v.glide) < 0.001) v.glide = 0;
       const vel = v.velocity;
       const brightVel = 1 - p.velBright + p.velBright * vel;
       const ampVel = 0.35 + 0.65 * vel;

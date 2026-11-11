@@ -29,8 +29,13 @@
     <div id="grid" class="grid"></div>
 
     <div class="side">
+    <div id="engines" class="seg engines" role="group" aria-label="Engine"></div>
+    <div class="controls">
+      <label>Lock rows <select id="lock"></select></label>
+      <label>Volume <input id="volume" type="range" min="0" max="100" /></label>
+    </div>
     <div class="actions">
-      <div class="seg" role="group" aria-label="Voice mode">
+      <div id="modes" class="seg" role="group" aria-label="Voice mode">
         <button data-mode="poly" class="on">Poly</button><button data-mode="mono">Mono legato</button><button data-mode="duo">Duo</button>
       </div>
       <button id="go" class="primary">Go</button>
@@ -44,7 +49,7 @@
     </div>
 
     <div id="info" class="info"></div>
-    <div id="status" class="status">Click Start, then play with your keyboard (A W S E D F ...) or a MIDI keyboard.</div>
+    <div id="status" class="status">Pick an engine, then play with your keyboard (A W S E D F ...) or a MIDI keyboard.</div>
     </div>
   </main>
 

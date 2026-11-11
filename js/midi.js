@@ -7,8 +7,8 @@
 const STORE_KEY = 'fmez.ccmap.v2';
 
 export class Midi {
-  constructor({ onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag }) {
-    Object.assign(this, { onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag });
+  constructor({ onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag, onProgram }) {
+    Object.assign(this, { onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag, onProgram });
     this.lastHint = -Infinity;
     // Default: the PC4 sends CC 1-24 in grid order (row by row from the top-left,
     // 4 per row) on any channel. A learned map, once saved, replaces it.
@@ -90,6 +90,7 @@ export class Midi {
     const type = status & 0xf0, ch = status & 0x0f;
     if (type === 0x90 && d2 > 0) this.onNoteOn(d1, d2 / 127);
     else if (type === 0x80 || (type === 0x90 && d2 === 0)) this.onNoteOff(d1);
+    else if (type === 0xc0) this.onProgram(d1);
     else if (type === 0xb0) {
       const key = `${ch}:${d1}`;
       if (this.learning) {
@@ -111,7 +112,7 @@ export class Midi {
           ? `CC ${d1} on channel ${ch + 1} isn't in your learned map. Click Learn PC4 again, or Use CC 1-24.`
           : `CC ${d1} is outside 1-24, so no knob uses it. Set the PC4 knobs to CC 1-24, or click Learn PC4.`);
       }
-    } else if (this.learning && type !== 0xb0) {
+    } else if (this.learning && type !== 0xc0) {
       this.onStatus(`Learning needs knob (CC) messages, but got ${this.last}. Check the PC4 is set to send CC.`);
     }
   }

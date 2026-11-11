@@ -254,7 +254,7 @@ class FmProcessor extends AudioWorkletProcessor {
     if (!p) return true;
 
     const sr = sampleRate;
-    this.glideCoef = Math.exp(-128 / (0.05 * sr)); // ~50 ms legato glide per block
+    this.glideCoef = Math.exp(-128 / (Math.max(0.001, p.glide || 0.05) * sr)); // legato glide per block
     const lfoInc = p.lfo.rate / sr;
     const pitchDecay = Math.exp(-1 / Math.max(1, p.pitchEnv.decay * sr / 4.6));
     const slots = this.slots;
@@ -268,7 +268,8 @@ class FmProcessor extends AudioWorkletProcessor {
       if (Math.abs(v.glide) < 0.001) v.glide = 0;
       const vel = v.velocity;
       const brightVel = 1 - p.velBright + p.velBright * vel;
-      const ampVel = 0.35 + 0.65 * vel;
+      const va = p.velAmp ?? 0.65;
+      const ampVel = 1 - va + va * vel;
       // Per-slot frequency increments (cycles per sample), computed per block.
       const incM = new Float64Array(6), incL = new Float64Array(6), incR = new Float64Array(6);
       const pe = v.pitchEnv;

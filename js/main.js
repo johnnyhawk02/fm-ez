@@ -1,7 +1,6 @@
-import { KNOBS, ROWS, K, defaultMacros, makeVoicing, buildPatch, engineOf, methodOf, library, voiceIndex, neutralise } from './macros.js';
-import { ENGINES } from './engines.js';
+import { knobsFor, defaultMacros, makeVoicing, buildPatch, methodOf, library, voiceIndexOf, routing, routingKey, SHARED, ENGINE_KNOBS, LOCKS } from './macros.js';
+import { ENGINES, LIBRARY_ENGINE } from './engines.js';
 import { knobMatrixHTML } from './matrix.js';
-import { routing } from './macros.js';
 import { parseSysex } from './dx7.js';
 import { isCarrier } from './engines.js';
 import { randomise, morph, rng } from './random.js';
@@ -9,12 +8,18 @@ import { Midi } from './midi.js';
 
 // ---------- state ----------
 const state = {
-  macros: defaultMacros(),
+  engine: 1, // Bass
+  macros: defaultMacros(1),
   voicing: makeVoicing(rng(1)),
   seed: 1,
-  base: null, // DX7 voice in Library mode
+  base: null, // DX7 voice in the DX7 engine
+  volume: 0.6,
+  lock: 'None',
 };
-const knobHw = KNOBS.map(() => ({ hw: null, picked: true })); // soft takeover per knob
+// Each engine remembers its own knob positions while you switch away.
+const perEngine = {};
+const knobs = () => knobsFor(state.engine);
+const knobHw = Array.from({ length: 24 }, () => ({ hw: null, picked: true })); // soft takeover per knob
 const slots = { A: null, B: null };
 const history = [];
 let future = [];
@@ -47,7 +52,7 @@ function sendPatch() {
   pending = true;
   requestAnimationFrame(() => {
     pending = false;
-    const patch = buildPatch(state.macros, state.voicing, state.base);
+    const patch = buildPatch(state);
     if (audio) audio.node.port.postMessage({ type: 'patch', patch });
     renderInfo(patch);
   });
@@ -58,10 +63,9 @@ const noteOff = (note) => audio && audio.node.port.postMessage({ type: 'noteOff'
 
 // ---------- knobs ----------
 const grid = document.getElementById('grid');
-const knobEls = KNOBS.map((k, i) => {
+const knobEls = Array.from({ length: 24 }, (_, i) => {
   const el = document.createElement('div');
   el.className = 'knob';
-  el.dataset.row = k.group.toLowerCase();
   el.innerHTML = `
     <svg viewBox="0 0 60 60" aria-hidden="true">
       <circle class="track" cx="30" cy="30" r="22" />
@@ -69,7 +73,7 @@ const knobEls = KNOBS.map((k, i) => {
       <line class="pointer" x1="30" y1="30" x2="30" y2="10" />
       <circle class="hw" r="3" cx="30" cy="8" />
     </svg>
-    <div class="label">${k.label}</div>
+    <div class="label"></div>
     <div class="value"></div>`;
   el.tabIndex = 0;
   grid.appendChild(el);
@@ -84,6 +88,9 @@ function polar(v, r) {
 
 function renderKnob(i) {
   const el = knobEls[i];
+  const k = knobs()[i];
+  el.dataset.row = k.group.toLowerCase();
+  el.querySelector('.label').textContent = k.label;
   const v = state.macros[i];
   const [x0, y0] = polar(0, 22);
   const [x1, y1] = polar(v, 22);
@@ -101,10 +108,15 @@ function renderKnob(i) {
   } else {
     el.classList.remove('waiting');
   }
-  el.querySelector('.value').textContent = KNOBS[i].fmt(v, state.macros);
+  el.querySelector('.value').textContent = k.fmt(v);
   if (matrixKnob >= 0) refreshMatrixSoon();
 }
-const renderAll = () => KNOBS.forEach((_, i) => renderKnob(i));
+function renderAll() {
+  knobEls.forEach((_, i) => renderKnob(i));
+  const rows = [...ENGINES[state.engine].rows, 'Random'];
+  document.querySelectorAll('.rows span').forEach((el, r) => { el.textContent = rows[r]; });
+  document.querySelectorAll('#engines button').forEach((b, e) => b.classList.toggle('on', e === state.engine));
+}
 
 // ---------- knob matrix (long press / right-click) ----------
 const ROUTING_KEY = 'fmez.routing.v1';
@@ -134,7 +146,7 @@ matrixEl.addEventListener('pointerdown', (e) => { if (e.target === matrixEl) clo
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMatrix(); });
 matrixEl.addEventListener('input', (e) => {
   if (e.target.type !== 'range') return;
-  const id = KNOBS[matrixKnob].id;
+  const id = routingKey(state.engine, knobs()[matrixKnob].type);
   routing[id] = routing[id] || [1, 1, 1, 1, 1, 1];
   routing[id][+e.target.dataset.op] = e.target.value / 100;
   e.target.nextElementSibling.textContent = `${e.target.value}%`;
@@ -142,7 +154,7 @@ matrixEl.addEventListener('input', (e) => {
 });
 matrixEl.addEventListener('change', (e) => {
   if (e.target.type !== 'range') return;
-  const id = KNOBS[matrixKnob].id;
+  const id = routingKey(state.engine, knobs()[matrixKnob].type);
   if (routing[id] && routing[id].every((w) => w === 1)) delete routing[id];
   saveRouting();
   e.target.blur();
@@ -150,7 +162,7 @@ matrixEl.addEventListener('change', (e) => {
 });
 matrixEl.addEventListener('click', (e) => {
   if (!e.target.classList.contains('reset-routing')) return;
-  delete routing[KNOBS[matrixKnob].id];
+  delete routing[routingKey(state.engine, knobs()[matrixKnob].type)];
   saveRouting(); sendPatch(); refreshMatrix();
 });
 
@@ -182,30 +194,24 @@ function attachDrag(el, i) {
   const end = (e) => { clearTimeout(pressTimer); el.classList.remove('active'); if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
-  el.addEventListener('dblclick', () => setKnob(i, KNOBS[i].def, 'ui'));
+  el.addEventListener('dblclick', () => setKnob(i, knobs()[i].def, 'ui'));
   el.addEventListener('wheel', (e) => { e.preventDefault(); setKnob(i, state.macros[i] - Math.sign(e.deltaY) * 0.02, 'ui'); }, { passive: false });
 }
 
 function setKnob(i, v, source) {
   v = Math.min(1, Math.max(0, v));
   const prev = state.macros[i];
-  const wasLib = engineOf(state.macros).library;
-  const prevVoice = voiceIndex(state.macros);
+  const isLib = ENGINES[state.engine].library;
+  const prevVoice = voiceIndexOf(prev);
   state.macros[i] = v;
-  const isLib = engineOf(state.macros).library;
-  if (i === K.engine && isLib !== wasLib) {
-    if (isLib) { neutralise(state.macros); selectVoice(); } else state.base = null;
-  } else if (i === K.algo && isLib && voiceIndex(state.macros) !== prevVoice) {
-    selectVoice();
-  }
-  if (i === K.go) {
+  if (i === 0 && isLib && voiceIndexOf(v) !== prevVoice) selectVoice();
+  if (i === SHARED.go) {
     if (prev < 0.5 && v >= 0.5) fire();
-  } else if (i === K.morph) {
+  } else if (i === SHARED.morph) {
     const r = morph(state, slots, v);
     if (r) applySound(r, false);
   }
-  // Labels like "DX 5" or ms values depend on the engine.
-  if (i === K.engine || i === K.algo) renderAll(); else renderKnob(i);
+  renderKnob(i);
   sendPatch();
 }
 
@@ -216,7 +222,7 @@ function hwKnob(i, v) {
   const cur = state.macros[i];
   const prev = h.hw;
   h.hw = v;
-  if (KNOBS[i].perform) h.picked = true;
+  if (knobs()[i].perform) h.picked = true;
   if (!h.picked) {
     const crossed = prev !== null && (prev - cur) * (v - cur) <= 0;
     if (crossed || Math.abs(v - cur) < 0.03) h.picked = true;
@@ -226,24 +232,45 @@ function hwKnob(i, v) {
 }
 
 function unpickChanged(oldM, newM) {
-  newM.forEach((v, i) => { if (Math.abs(v - oldM[i]) > 1e-6 && !KNOBS[i].perform) knobHw[i].picked = false; });
+  newM.forEach((v, i) => { if (Math.abs(v - oldM[i]) > 1e-6 && i < ENGINE_KNOBS) knobHw[i].picked = false; });
+}
+
+// ---------- engines ----------
+function selectEngine(e, record = true) {
+  if (e === state.engine || !ENGINES[e]) return;
+  if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
+  perEngine[state.engine] = { macros: state.macros.slice(0, ENGINE_KNOBS), base: state.base };
+  const old = state.macros.slice();
+  const saved = perEngine[e];
+  const fresh = defaultMacros(e);
+  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = saved ? saved.macros[i] : fresh[i];
+  state.engine = e;
+  state.base = saved ? saved.base : null;
+  if (ENGINES[e].library && !state.base) selectVoice();
+  unpickChanged(old, state.macros);
+  renderAll(); sendPatch(); updateButtons();
+  setStatus(`Engine: ${ENGINES[e].name}`);
 }
 
 // ---------- sounds, history ----------
 function snapshot() {
-  return { macros: state.macros.slice(), voicing: structuredClone(state.voicing), seed: state.seed, base: state.base && structuredClone(state.base) };
+  return { engine: state.engine, macros: state.macros.slice(), voicing: structuredClone(state.voicing), seed: state.seed, base: state.base && structuredClone(state.base) };
 }
 
 function selectVoice() {
-  const idx = voiceIndex(state.macros);
+  const idx = voiceIndexOf(state.macros[0]);
   state.base = idx >= 0 ? structuredClone(library.voices[idx]) : null;
 }
 
 function applySound(s, record = true) {
   if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
   const old = state.macros.slice();
+  if (s.engine !== undefined && s.engine !== state.engine) {
+    perEngine[state.engine] = { macros: state.macros.slice(0, ENGINE_KNOBS), base: state.base };
+    state.engine = s.engine;
+  }
   // Keep the Random row as the performer has it.
-  KNOBS.forEach((k, i) => { if (!k.perform) state.macros[i] = s.macros[i]; });
+  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = s.macros[i];
   state.voicing = structuredClone(s.voicing);
   state.base = s.base ? structuredClone(s.base) : null;
   if (s.seed !== undefined) state.seed = s.seed;
@@ -255,7 +282,7 @@ function applySound(s, record = true) {
 
 function fire() {
   const seed = (Math.random() * 2 ** 32) >>> 0;
-  const r = randomise(state, slots, seed);
+  const r = randomise(state, slots, seed, state.lock);
   applySound({ ...r, seed });
   setStatus(`${r.method} · seed ${seed.toString(16)}`);
 }
@@ -330,6 +357,7 @@ const midi = new Midi({
   onKnob: hwKnob,
   onStatus: setStatus,
   onLearnStep: (i) => knobEls.forEach((el, k) => el.classList.toggle('learn', k === i)),
+  onProgram: (n) => { if (n < ENGINES.length) selectEngine(n); },
   onDiag: renderMidiBar,
 });
 
@@ -385,22 +413,22 @@ async function loadFiles(files) {
   library.voices = library.voices.slice(-1024);
   try { localStorage.setItem(LIB_KEY, JSON.stringify(library.voices)); } catch { /* too big or blocked */ }
   const first = library.voices.length - added;
-  const libIdx = ENGINES.findIndex((e) => e.library);
   history.push(snapshot()); future = [];
+  selectEngine(LIBRARY_ENGINE, false);
   const old = state.macros.slice();
-  state.macros[K.engine] = (libIdx + 0.5) / ENGINES.length;
-  state.macros[K.algo] = (first + 0.5) / library.voices.length;
-  neutralise(state.macros);
+  const fresh = defaultMacros(LIBRARY_ENGINE);
+  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = fresh[i];
+  state.macros[0] = (first + 0.5) / library.voices.length;
   selectVoice();
   unpickChanged(old, state.macros);
   renderAll(); sendPatch(); updateButtons();
-  setStatus(`Loaded ${added} DX7 voices. Algorithm knob picks the voice; Go mutates it.`);
+  setStatus(`Loaded ${added} DX7 voices. Knob 1 picks the voice; Go mutates it.`);
 }
 try { library.voices = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch { /* none saved */ }
 
-document.querySelectorAll('.seg button').forEach((btn) => btn.addEventListener('click', () => {
+document.querySelectorAll('#modes button').forEach((btn) => btn.addEventListener('click', () => {
   voiceMode = btn.dataset.mode;
-  document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', b === btn));
+  document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b === btn));
   if (audio) audio.node.port.postMessage({ type: 'mode', mode: voiceMode });
   setStatus(`Voice mode: ${btn.textContent}`);
 }));
@@ -411,6 +439,22 @@ fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fi
 window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('drop'); });
 window.addEventListener('dragleave', () => document.body.classList.remove('drop'));
 window.addEventListener('drop', (e) => { e.preventDefault(); document.body.classList.remove('drop'); loadFiles([...e.dataTransfer.files]); });
+
+// Engine switch, lock and volume (on screen; MIDI program change 1-7 also picks the engine).
+const enginesEl = document.getElementById('engines');
+ENGINES.forEach((e, idx) => {
+  const b = document.createElement('button');
+  b.textContent = e.name;
+  b.title = `MIDI program change ${idx + 1}`;
+  b.addEventListener('click', () => { startAudio(); selectEngine(idx); });
+  enginesEl.appendChild(b);
+});
+const lockEl = document.getElementById('lock');
+LOCKS.forEach((l) => { const o = document.createElement('option'); o.value = o.textContent = l; lockEl.appendChild(o); });
+lockEl.addEventListener('change', () => { state.lock = lockEl.value; setStatus(`Lock rows: ${state.lock}`); });
+const volEl = document.getElementById('volume');
+volEl.value = state.volume * 100;
+volEl.addEventListener('input', () => { state.volume = volEl.value / 100; sendPatch(); });
 
 renderAll();
 updateButtons();

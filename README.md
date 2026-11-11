@@ -16,25 +16,30 @@ Six-operator FM synth for the browser, built to be played from 24 knobs
   hardware knobs never make the sound jump. Computer keyboard: A W S E D F T G
   Y H U J K, Z and X change octave.
 
-## Knob grid
+## Engines and knob grid
 
-Laid out like the Faderfox PC4: 4 knobs across, 6 rows down.
+Pick the engine with the buttons beside the knobs, or send MIDI **program
+change 1 to 7** (Percussion, Bass, Keys, Bells, Pads, Lead, DX7). Each engine
+has its own 20 knobs (rows 1 to 5) and remembers their settings when you switch
+away. Row 6 is the same in every engine. Lock rows and Volume are on screen.
 
-| Row | 1 | 2 | 3 | 4 |
-| --- | --- | --- | --- | --- |
-| Tone | Engine | Algorithm / voice | Brightness | Harmonics |
-| Tone | Feedback | Inharmonic | Pitch env | Tone / drive |
-| Envelope | Attack | Decay | Sustain | Release |
-| Motion | Mod decay | Vel > bright | LFO rate | LFO depth |
-| Stereo | Width | Mod spread | Morph A>B | Volume |
-| Random | Method | Amount | Go | Lock rows |
+| Engine | Row 1 | Row 2 | Row 3 | Row 4 | Row 5 |
+| --- | --- | --- | --- | --- | --- |
+| Percussion | Sound, Tune, Pitch drop, Drop time | Brightness, Noise, Metal, Overtone | Snap, Decay, Ring, Choke | Mod decay, Accent, Vel > bright, Detune | Width, Mod spread, Drive, Low-pass |
+| Bass | Sound, Octave, Brightness, Feedback | Overtone, Sub mix, Grit, Detune | Attack, Decay, Sustain, Release | Pluck, Vel > bright, Glide, Vibrato | Width, Mod spread, Drive, Low-pass |
+| Keys | Sound, Brightness, Tine / body, Bark | Feedback, Inharmonic, Chorus, Vel > bright | Attack, Decay, Sustain, Release | Mod decay, Vel > level, LFO rate, Wobble | Width, Mod spread, Drive, Low-pass |
+| Bells | Sound, Brightness, Inharmonic, Spectrum | Feedback, Mix, Beat, Strike bend | Attack, Decay, Sustain, Release | Mod decay, Vel > bright, LFO rate, LFO depth | Width, Mod spread, Drive, Low-pass |
+| Pads | Sound, Brightness, Overtone, Detune | Feedback, Mix, Inharmonic, Vibrato | Attack, Decay, Sustain, Release | Swell, Evolve, LFO rate, LFO depth | Width, Mod spread, Drive, Low-pass |
+| Lead | Sound, Brightness, Feedback, Overtone | Mix, Inharmonic, Detune, Blip | Attack, Decay, Sustain, Release | Mod decay, Vel > bright, Glide, Vibrato | Width, Mod spread, Drive, Low-pass |
+| DX7 | Voice, Brightness, Octave, Feedback | Inharmonic, Pitch drop, Detune, Vibrato | Attack, Decay, Sustain, Release | Mod decay, Vel > bright, LFO rate, LFO depth | Width, Mod spread, Drive, Low-pass |
+
+Row 6 (all engines): Method, Amount, Go, Morph A>B.
 
 ## DX7 voices
 
 Click **Load DX7 .syx** or drop .syx files on the page (32-voice banks or
-single voices). The engine switches to **DX7 Library**: the Algorithm knob picks
-the voice, and the other Tone and Shape knobs become offsets around it (middle =
-as loaded; Harmonics shifts octaves). Go then works on the voice's own DX7
+single voices). The engine switches to **DX7**: knob 1 (Voice) picks the voice, and
+the other knobs become offsets around it (middle = as loaded). Go then works on the voice's own DX7
 parameters:
 
 - **Generate** picks another voice from the loaded banks.
@@ -52,7 +57,7 @@ pitch envelope, LFO, keyboard scaling and per-operator velocity.
 ## PC4 setup
 
 Set the PC4's 24 knobs to send **CC 1 to 24** in grid order: row by row from the
-top-left, 4 per row (knob 1 = Engine, knob 24 = Lock rows). Any MIDI channel
+top-left, 4 per row (knob 1 = Sound, knob 24 = Morph A>B). Program change 1-7 picks the engine. Any MIDI channel
 works. FM EZ uses this mapping by default, no setup needed.
 
 To use other CC numbers, click **Learn PC4** and turn each knob once as it

@@ -108,3 +108,10 @@ body.drop { outline: 3px dashed var(--random); outline-offset: -8px; }
 .midibar.problem #midiports { color: #f0a09b; }
 .midibar #midilast { color: var(--ink); font-variant-numeric: tabular-nums; }
 .midibar button { padding: 3px 10px; font-size: 12px; }
+
+.engines { flex-wrap: wrap; }
+.engines button { padding: 8px 12px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; color: var(--muted); font-size: 13px; }
+.controls label { display: flex; align-items: center; gap: 8px; }
+.controls select { background: var(--panel); color: var(--ink); border: 1px solid var(--track); border-radius: 6px; padding: 4px 6px; font: inherit; }
+.controls input[type=range] { accent-color: var(--random); width: 140px; }

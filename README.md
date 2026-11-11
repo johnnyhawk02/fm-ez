@@ -51,8 +51,14 @@ pitch envelope, LFO, keyboard scaling and per-operator velocity.
 
 ## PC4 setup
 
-Click **Learn PC4**, then turn each knob once, row by row from the top-left (4 per row). The
-mapping is saved in the browser.
+Set the PC4's 24 knobs to send **CC 1 to 24** in grid order: row by row from the
+top-left, 4 per row (knob 1 = Engine, knob 24 = Lock rows). Any MIDI channel
+works. FM EZ uses this mapping by default, no setup needed.
+
+To use other CC numbers, click **Learn PC4** and turn each knob once as it
+lights up; the mapping is saved in the browser. **Use CC 1-24** goes back to the
+default. The MIDI bar under the title shows the ports the browser sees and the
+last message received.
 
 ## Run locally
 

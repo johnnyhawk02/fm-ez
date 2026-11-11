@@ -10,7 +10,10 @@ export class Midi {
   constructor({ onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag }) {
     Object.assign(this, { onNoteOn, onNoteOff, onKnob, onStatus, onLearnStep, onDiag });
     this.lastHint = -Infinity;
+    // Default: the PC4 sends CC 1-24 in grid order (row by row from the top-left,
+    // 4 per row) on any channel. A learned map, once saved, replaces it.
     this.map = load();
+    this.custom = Object.keys(this.map).length > 0;
     this.learning = null; // { next: index }
     this.access = null;
     this.count = 0;        // messages received (clock and sensing not counted)
@@ -24,6 +27,7 @@ export class Midi {
     this.onDiag({
       problem: this.problem, permission: this.permission, ports: this.ports,
       count: this.count, last: this.last, flash,
+      mapping: this.custom ? 'learned' : 'CC 1-24',
     });
   }
 
@@ -99,11 +103,13 @@ export class Midi {
         }
         return;
       }
-      const idx = this.map[key];
+      const idx = this.custom ? this.map[key] : (d1 >= 1 && d1 <= 24 ? d1 - 1 : undefined);
       if (idx !== undefined) this.onKnob(idx, d2 / 127);
       else if (performance.now() - this.lastHint > 2000) {
         this.lastHint = performance.now();
-        this.onStatus(`CC ${d1} on channel ${ch + 1} isn't mapped yet. Click Learn PC4 and turn each knob once.`);
+        this.onStatus(this.custom
+          ? `CC ${d1} on channel ${ch + 1} isn't in your learned map. Click Learn PC4 again, or Use CC 1-24.`
+          : `CC ${d1} is outside 1-24, so no knob uses it. Set the PC4 knobs to CC 1-24, or click Learn PC4.`);
       }
     } else if (this.learning && type !== 0xb0) {
       this.onStatus(`Learning needs knob (CC) messages, but got ${this.last}. Check the PC4 is set to send CC.`);
@@ -121,7 +127,19 @@ export class Midi {
     this.learning = null;
     this.onLearnStep(-1);
     save(this.map);
+    this.custom = true;
     this.onStatus(`Saved ${Object.keys(this.map).length} knob mappings`);
+    this.diag();
+  }
+
+  useDefault() {
+    this.learning = null;
+    this.onLearnStep(-1);
+    this.map = {};
+    this.custom = false;
+    try { localStorage.removeItem(STORE_KEY); } catch { /* storage blocked */ }
+    this.onStatus('Knobs use CC 1-24 in grid order');
+    this.diag();
   }
 }
 

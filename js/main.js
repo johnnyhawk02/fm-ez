@@ -344,6 +344,7 @@ function renderMidiBar(d) {
   else text = `MIDI inputs: ${ports.join(', ')}`;
   document.getElementById('midiports').textContent = text;
   midiBar.classList.toggle('problem', !!d.problem || !ports.length);
+  document.getElementById('midimap').textContent = `Knobs: ${d.mapping}`;
   document.getElementById('midilast').textContent = d.count ? `Last: ${d.last} (${d.count} messages)` : (ports.length && !d.problem ? 'No messages yet: turn a knob or press a key' : '');
   midiDot.className = `dot ${d.problem || !ports.length ? 'bad' : 'ok'}`;
   if (d.flash) {
@@ -353,6 +354,7 @@ function renderMidiBar(d) {
   }
 }
 document.getElementById('midiconnect').addEventListener('click', () => midi.start());
+document.getElementById('midireset').addEventListener('click', () => midi.useDefault());
 // MIDI is requested straight away (Chrome may ask for permission), so it works
 // whichever way audio gets started.
 midi.start();

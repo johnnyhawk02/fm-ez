@@ -49,6 +49,10 @@ export function randomise(state, slots, seed) {
     // Fresh sound; Amount widens the range away from the middle.
     const spread = 0.35 + 0.65 * amount;
     for (const i of keys) m[i] = clamp(0.5 + (rand() - 0.5) * 2 * spread);
+    // Mostly harmonic sounds; inharmonic ones get rarer as Amount drops.
+    if (keys.includes(K.inharm)) m[K.inharm] = rand() < 0.6 ? 0 : rand() * amount;
+    // Pitch env sweeps only now and then.
+    if (keys.includes(K.pitchEnv)) m[K.pitchEnv] = rand() < 0.7 ? 0 : rand() * amount;
     voicing = makeVoicing(rand);
   } else if (method === 'Mutate') {
     for (const i of keys) m[i] = clamp(m[i] + gauss(rand) * amount * 0.15);

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FM EZ</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header>
+    <h1>FM EZ</h1>
+    <p class="sub">Six-operator FM on 24 knobs</p>
+    <button id="start" class="primary">Start audio + MIDI</button>
+  </header>
+
+  <main>
+    <div class="rows">
+      <span>Tone</span><span>Shape</span><span>Space</span><span>Random</span>
+    </div>
+    <div id="grid" class="grid"></div>
+
+    <div class="actions">
+      <button id="go" class="primary">Go</button>
+      <button id="undo">Undo</button>
+      <button id="redo">Redo</button>
+      <button id="storeA">Store A</button>
+      <button id="storeB">Store B</button>
+      <button id="learn">Learn PC4</button>
+    </div>
+
+    <div id="info" class="info"></div>
+    <div id="status" class="status">Click Start, then play with your keyboard (A W S E D F ...) or a MIDI keyboard.</div>
+  </main>
+
+  <footer>
+    Drag knobs up and down (Shift for fine), scroll to nudge, double-click to reset.
+    A ring dot means your PC4 knob is somewhere else: turn it past the value to pick it up.
+  </footer>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

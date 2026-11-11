@@ -53,7 +53,7 @@ const grid = document.getElementById('grid');
 const knobEls = KNOBS.map((k, i) => {
   const el = document.createElement('div');
   el.className = 'knob';
-  el.dataset.row = ROWS[Math.floor(i / 6)].toLowerCase();
+  el.dataset.row = k.group.toLowerCase();
   el.innerHTML = `
     <svg viewBox="0 0 60 60" aria-hidden="true">
       <circle class="track" cx="30" cy="30" r="22" />
@@ -174,7 +174,7 @@ function applySound(s, record = true) {
   if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
   const old = state.macros.slice();
   // Keep the Random row as the performer has it.
-  for (let i = 0; i < 18; i++) state.macros[i] = s.macros[i];
+  KNOBS.forEach((k, i) => { if (!k.perform) state.macros[i] = s.macros[i]; });
   state.voicing = structuredClone(s.voicing);
   state.base = s.base ? structuredClone(s.base) : null;
   if (s.seed !== undefined) state.seed = s.seed;

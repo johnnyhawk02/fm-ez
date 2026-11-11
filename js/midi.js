@@ -1,6 +1,6 @@
 // Web MIDI: notes from any input, CCs mapped to the 24 knobs.
 // Mapping is learned (turn the PC4 knobs in order) and saved in the browser.
-const STORE_KEY = 'fmez.ccmap.v1';
+const STORE_KEY = 'fmez.ccmap.v2';
 
 export class Midi {
   constructor({ onNoteOn, onNoteOff, onKnob, onStatus }) {
@@ -55,7 +55,7 @@ export class Midi {
   startLearn() {
     this.map = {};
     this.learning = { next: 0, seen: new Set() };
-    this.onStatus('Learning: turn knob 1 of 24 (top-left), then each knob in order');
+    this.onStatus('Learning: turn knob 1 of 24 (top-left), then along each row of 4, row by row');
   }
 
   stopLearn() {

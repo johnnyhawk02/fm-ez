@@ -1,7 +1,7 @@
 # FM EZ
 
 Six-operator FM synth for the browser, built to be played from 24 knobs
-(a 4 x 6 grid, laid out like the Faderfox PC4).
+(4 across by 6 down, laid out like the Faderfox PC4).
 
 - **Engines:** Percussion, Bass, Keys, Bells, Pads, Lead. Each engine is a data
   template (algorithms, ratio sets, ranges) in `js/engines.js`.
@@ -18,12 +18,16 @@ Six-operator FM synth for the browser, built to be played from 24 knobs
 
 ## Knob grid
 
-| Row | 1 | 2 | 3 | 4 | 5 | 6 |
-| --- | --- | --- | --- | --- | --- | --- |
-| Tone | Engine | Algorithm | Brightness | Harmonics | Feedback | Inharmonic |
-| Shape | Attack | Decay | Sustain | Release | Mod decay | Vel > bright |
-| Space | Width | Mod spread | LFO rate | LFO depth | Pitch env | Tone / drive |
-| Random | Method | Amount | Go | Morph A>B | Lock rows | Volume |
+Laid out like the Faderfox PC4: 4 knobs across, 6 rows down.
+
+| Row | 1 | 2 | 3 | 4 |
+| --- | --- | --- | --- | --- |
+| Tone | Engine | Algorithm / voice | Brightness | Harmonics |
+| Tone | Feedback | Inharmonic | Pitch env | Tone / drive |
+| Envelope | Attack | Decay | Sustain | Release |
+| Motion | Mod decay | Vel > bright | LFO rate | LFO depth |
+| Stereo | Width | Mod spread | Morph A>B | Volume |
+| Random | Method | Amount | Go | Lock rows |
 
 ## DX7 voices
 
@@ -47,7 +51,7 @@ pitch envelope, LFO, keyboard scaling and per-operator velocity.
 
 ## PC4 setup
 
-Click **Learn PC4**, then turn each knob once, top-left to bottom-right. The
+Click **Learn PC4**, then turn each knob once, row by row from the top-left (4 per row). The
 mapping is saved in the browser.
 
 ## Run locally

@@ -1,6 +1,6 @@
 // Randomisation methods. Each returns a new { macros, voicing } and never
 // touches the Random row (the performance controls) or locked rows.
-import { K, KNOBS, ROWS, makeVoicing, locksOf, methodOf, engineOf, library, voiceIndex } from './macros.js';
+import { K, KNOBS, makeVoicing, locksOf, methodOf, engineOf, library, voiceIndex } from './macros.js';
 import { isCarrier } from './engines.js';
 import { mutateVoice, rerollRatios, breedVoices, morphVoices } from './dx7.js';
 
@@ -26,9 +26,9 @@ const gauss = (rand) => {
 function editable(macros) {
   const locks = locksOf(macros);
   const out = [];
-  for (let i = 0; i < 18; i++) {
-    if (i === K.engine) continue;
-    if (locks.has(ROWS[Math.floor(i / 6)])) continue;
+  for (let i = 0; i < KNOBS.length; i++) {
+    if (KNOBS[i].perform || i === K.engine) continue;
+    if (locks.has(KNOBS[i].group)) continue;
     out.push(i);
   }
   return out;
@@ -80,10 +80,10 @@ export function randomise(state, slots, seed) {
       for (const i of keys) m[i] = clamp(m[i] + gauss(rand) * amount * 0.15);
     }
   } else if (method === 'Row') {
-    const rows = [...new Set(keys.map((i) => Math.floor(i / 6)))];
-    if (rows.length) {
-      const row = rows[Math.floor(rand() * rows.length)];
-      for (const i of keys) if (Math.floor(i / 6) === row) m[i] = rand();
+    const groups = [...new Set(keys.map((i) => KNOBS[i].group))];
+    if (groups.length) {
+      const g = groups[Math.floor(rand() * groups.length)];
+      for (const i of keys) if (KNOBS[i].group === g) m[i] = rand();
     }
   }
   return { macros: m, voicing, method, base: null };
@@ -112,12 +112,15 @@ function randomiseLibrary(state, slots, seed) {
   } else if (method === 'Row') {
     // Offsets around the loaded voice (middle = as loaded); Algorithm stays on the voice.
     const keys = editable(m).filter((i) => i !== K.algo);
-    const rows = [...new Set(keys.map((i) => Math.floor(i / 6)))];
-    if (rows.length) {
-      const row = rows[Math.floor(rand() * rows.length)];
+    const groups = [...new Set(keys.map((i) => KNOBS[i].group))];
+    if (groups.length) {
+      const g = groups[Math.floor(rand() * groups.length)];
       for (const i of keys) {
-        if (Math.floor(i / 6) !== row) continue;
-        m[i] = row === 2 ? rand() : clamp(0.5 + (rand() - 0.5) * amount);
+        if (KNOBS[i].group !== g) continue;
+        // Offset knobs (middle = as loaded) except Space and the LFO, which are absolute.
+        const absolute = g === 'Space' || i === K.lfoRate || i === K.lfoDepth || i === K.velBright || i === K.tone;
+        const fromZero = i === K.pitchEnv || i === K.inharm; // 0 = off
+        m[i] = fromZero ? rand() * amount * 0.3 : absolute ? rand() : clamp(0.5 + (rand() - 0.5) * amount);
       }
     }
   } else if (base) {
@@ -135,7 +138,8 @@ export function morph(state, slots, t) {
   if (A.base && B.base) {
     return { macros: m, voicing: state.voicing, base: morphVoices(A.base, B.base, t) };
   }
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < KNOBS.length; i++) {
+    if (KNOBS[i].perform) continue;
     // Engine is discrete: switch halfway.
     m[i] = i === K.engine ? (t < 0.5 ? A.macros[i] : B.macros[i]) : A.macros[i] + (B.macros[i] - A.macros[i]) * t;
   }

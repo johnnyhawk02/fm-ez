@@ -6,7 +6,8 @@ import { voiceToOps, INIT_VOICE } from './dx7.js';
 // Voices loaded from .syx files.
 export const library = { voices: [] };
 
-export const ROWS = ['Tone', 'Shape', 'Space', 'Random'];
+export const ROWS = ['Tone', 'Tone', 'Envelope', 'Motion', 'Stereo', 'Random'];
+export const COLS = 4;
 
 export const METHODS = ['Generate', 'Mutate', 'Harmonic', 'Breed', 'Row'];
 export const LOCKS = ['None', 'Tone', 'Shape', 'Space', 'Tone+Shape', 'Shape+Space', 'Tone+Space'];
@@ -25,35 +26,39 @@ export function voiceIndex(m) {
   return n ? Math.min(n - 1, Math.floor(m[K.algo] * n)) : -1;
 }
 
+// Laid out as on the Faderfox PC4: 4 knobs across, 6 rows down.
+// group = what Lock rows protects and the colour; perform knobs are never randomised.
 export const KNOBS = [
   // Tone
-  { id: 'engine', label: 'Engine', def: 1 / 12 + 1 / 6, fmt: (v) => pick(ENGINES, v).name },
-  { id: 'algo', label: 'Algorithm', def: 0, fmt: (v, m) => (isLib(m) ? (voiceIndex(m) < 0 ? 'load .syx' : `${voiceIndex(m) + 1} ${library.voices[voiceIndex(m)].name}`) : `DX ${pick(engineOf(m).algos, v)}`) },
-  { id: 'bright', label: 'Brightness', def: 0.45, fmt: (v, m) => (isLib(m) ? `x${mult(v, 4).toFixed(2)}` : pct(v)) },
-  { id: 'harm', label: 'Harmonics', def: 0, fmt: (v, m) => (isLib(m) ? `${octaveOf(v) > 0 ? '+' : ''}${octaveOf(v)} oct` : `set ${Math.min(4, Math.floor(v * 5)) + 1}`) },
-  { id: 'feedback', label: 'Feedback', def: 0.2, fmt: (v, m) => (isLib(m) ? `x${(v * 2).toFixed(2)}` : pct(v)) },
-  { id: 'inharm', label: 'Inharmonic', def: 0, fmt: pct },
-  // Shape
-  { id: 'attack', label: 'Attack', def: 0.05, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).attack, v))) },
-  { id: 'decay', label: 'Decay', def: 0.4, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).decay, v))) },
-  { id: 'sustain', label: 'Sustain', def: 0.5, fmt: (v, m) => (isLib(m) ? `x${(v * 2).toFixed(2)}` : pct(lin(engineOf(m).sustain, v))) },
-  { id: 'release', label: 'Release', def: 0.3, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).release, v))) },
-  { id: 'modDecay', label: 'Mod decay', def: 0.4, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).modDecay, v))) },
-  { id: 'velBright', label: 'Vel > bright', def: 0.5, fmt: pct },
-  // Space
-  { id: 'width', label: 'Width', def: 0.4, fmt: pct },
-  { id: 'spread', label: 'Mod spread', def: 0.3, fmt: pct },
-  { id: 'lfoRate', label: 'LFO rate', def: 0.4, fmt: (v) => `${lfoHz(v).toFixed(2)} Hz` },
-  { id: 'lfoDepth', label: 'LFO depth', def: 0, fmt: pct },
-  { id: 'pitchEnv', label: 'Pitch env', def: 0, fmt: (v, m) => `${(v * engineOf(m).pitchEnv.max).toFixed(1)} st` },
-  { id: 'tone', label: 'Tone / drive', def: 0.5, fmt: (v) => (v < 0.5 ? `LP ${Math.round(cutoffOf(v))} Hz` : `drive ${pct((v - 0.5) * 2)}`) },
+  { id: 'engine', group: 'Tone', label: 'Engine', def: 1 / 12 + 1 / 6, fmt: (v) => pick(ENGINES, v).name },
+  { id: 'algo', group: 'Tone', label: 'Algorithm', def: 0, fmt: (v, m) => (isLib(m) ? (voiceIndex(m) < 0 ? 'load .syx' : `${voiceIndex(m) + 1} ${library.voices[voiceIndex(m)].name}`) : `DX ${pick(engineOf(m).algos, v)}`) },
+  { id: 'bright', group: 'Tone', label: 'Brightness', def: 0.45, fmt: (v, m) => (isLib(m) ? `x${mult(v, 4).toFixed(2)}` : pct(v)) },
+  { id: 'harm', group: 'Tone', label: 'Harmonics', def: 0, fmt: (v, m) => (isLib(m) ? `${octaveOf(v) > 0 ? '+' : ''}${octaveOf(v)} oct` : `set ${Math.min(4, Math.floor(v * 5)) + 1}`) },
+  // Tone
+  { id: 'feedback', group: 'Tone', label: 'Feedback', def: 0.2, fmt: (v, m) => (isLib(m) ? `x${(v * 2).toFixed(2)}` : pct(v)) },
+  { id: 'inharm', group: 'Tone', label: 'Inharmonic', def: 0, fmt: pct },
+  { id: 'pitchEnv', group: 'Tone', label: 'Pitch env', def: 0, fmt: (v, m) => `${(v * engineOf(m).pitchEnv.max).toFixed(1)} st` },
+  { id: 'tone', group: 'Tone', label: 'Tone / drive', def: 0.5, fmt: (v) => (v < 0.5 ? `LP ${Math.round(cutoffOf(v))} Hz` : `drive ${pct((v - 0.5) * 2)}`) },
+  // Envelope
+  { id: 'attack', group: 'Shape', label: 'Attack', def: 0.05, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).attack, v))) },
+  { id: 'decay', group: 'Shape', label: 'Decay', def: 0.4, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).decay, v))) },
+  { id: 'sustain', group: 'Shape', label: 'Sustain', def: 0.5, fmt: (v, m) => (isLib(m) ? `x${(v * 2).toFixed(2)}` : pct(lin(engineOf(m).sustain, v))) },
+  { id: 'release', group: 'Shape', label: 'Release', def: 0.3, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).release, v))) },
+  // Motion
+  { id: 'modDecay', group: 'Shape', label: 'Mod decay', def: 0.4, fmt: (v, m) => (isLib(m) ? times(v) : secs(expo(engineOf(m).modDecay, v))) },
+  { id: 'velBright', group: 'Shape', label: 'Vel > bright', def: 0.5, fmt: pct },
+  { id: 'lfoRate', group: 'Shape', label: 'LFO rate', def: 0.4, fmt: (v) => `${lfoHz(v).toFixed(2)} Hz` },
+  { id: 'lfoDepth', group: 'Shape', label: 'LFO depth', def: 0, fmt: pct },
+  // Stereo
+  { id: 'width', group: 'Space', label: 'Width', def: 0.4, fmt: pct },
+  { id: 'spread', group: 'Space', label: 'Mod spread', def: 0.3, fmt: pct },
+  { id: 'morph', group: 'Random', label: 'Morph A>B', def: 0, fmt: pct, perform: true },
+  { id: 'volume', group: 'Random', label: 'Volume', def: 0.6, fmt: pct, perform: true },
   // Random
-  { id: 'method', label: 'Method', def: 0, fmt: (v) => pick(METHODS, v), perform: true },
-  { id: 'amount', label: 'Amount', def: 0.5, fmt: pct, perform: true },
-  { id: 'go', label: 'Go', def: 0, fmt: (v) => (v >= 0.5 ? 'fire' : 'turn up'), perform: true },
-  { id: 'morph', label: 'Morph A>B', def: 0, fmt: pct, perform: true },
-  { id: 'lock', label: 'Lock rows', def: 0, fmt: (v) => pick(LOCKS, v), perform: true },
-  { id: 'volume', label: 'Volume', def: 0.6, fmt: pct, perform: true },
+  { id: 'method', group: 'Random', label: 'Method', def: 0, fmt: (v) => pick(METHODS, v), perform: true },
+  { id: 'amount', group: 'Random', label: 'Amount', def: 0.5, fmt: pct, perform: true },
+  { id: 'go', group: 'Random', label: 'Go', def: 0, fmt: (v) => (v >= 0.5 ? 'fire' : 'turn up'), perform: true },
+  { id: 'lock', group: 'Random', label: 'Lock rows', def: 0, fmt: (v) => pick(LOCKS, v), perform: true },
 ];
 
 export const K = Object.fromEntries(KNOBS.map((k, i) => [k.id, i]));

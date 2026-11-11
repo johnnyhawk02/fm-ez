@@ -23,6 +23,24 @@ Six-operator FM synth for the browser, built to be played from 24 knobs
 | Space | Width | Mod spread | LFO rate | LFO depth | Pitch env | Tone / drive |
 | Random | Method | Amount | Go | Morph A>B | Lock rows | Volume |
 
+## DX7 voices
+
+Click **Load DX7 .syx** or drop .syx files on the page (32-voice banks or
+single voices). The engine switches to **DX7 Library**: the Algorithm knob picks
+the voice, and the other Tone and Shape knobs become offsets around it (middle =
+as loaded; Harmonics shifts octaves). Go then works on the voice's own DX7
+parameters:
+
+- **Generate** picks another voice from the loaded banks.
+- **Mutate** nudges modulator levels and ratios, envelope rates and levels, and
+  detune. Carriers keep their level and pitch. Each Go mutates the last result.
+- **Harmonic** re-rolls the modulator ratios.
+- **Breed** builds a child operator by operator from voices stored in A and B.
+- **Morph A>B** blends the two stored voices.
+
+Loaded banks are remembered in the browser. Not yet carried over from the DX7:
+pitch envelope, LFO, keyboard scaling and per-operator velocity.
+
 ## PC4 setup
 
 Click **Learn PC4**, then turn each knob once, top-left to bottom-right. The

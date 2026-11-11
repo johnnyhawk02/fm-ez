@@ -214,7 +214,7 @@ class FmProcessor extends AudioWorkletProcessor {
 
     for (const v of this.voices) {
       if (!v.active) continue;
-      const base = 440 * Math.pow(2, (v.note - 69) / 12);
+      const base = 440 * Math.pow(2, (v.note - 69 + (p.transpose || 0)) / 12);
       const vel = v.velocity;
       const brightVel = 1 - p.velBright + p.velBright * vel;
       const ampVel = 0.35 + 0.65 * vel;

@@ -125,6 +125,14 @@ export const ENGINES = [
     modSus: 0.6,
     pitchEnv: { max: 3, decay: 0.05 },
   },
+  {
+    // Loaded DX7 voices. The Algorithm knob picks the voice; the other
+    // Tone and Shape knobs become offsets around the original (middle = as loaded).
+    name: 'DX7 Library',
+    library: true,
+    algos: [],
+    pitchEnv: { max: 12, decay: 0.1 },
+  },
 ];
 
 // Carrier flags per algorithm (OP1..OP6), from the msfa routing table.

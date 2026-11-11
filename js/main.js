@@ -1,4 +1,6 @@
-import { KNOBS, ROWS, K, defaultMacros, makeVoicing, buildPatch, engineOf, methodOf } from './macros.js';
+import { KNOBS, ROWS, K, defaultMacros, makeVoicing, buildPatch, engineOf, methodOf, library, voiceIndex, neutralise } from './macros.js';
+import { ENGINES } from './engines.js';
+import { parseSysex } from './dx7.js';
 import { isCarrier } from './engines.js';
 import { randomise, morph, rng } from './random.js';
 import { Midi } from './midi.js';
@@ -8,6 +10,7 @@ const state = {
   macros: defaultMacros(),
   voicing: makeVoicing(rng(1)),
   seed: 1,
+  base: null, // DX7 voice in Library mode
 };
 const knobHw = KNOBS.map(() => ({ hw: null, picked: true })); // soft takeover per knob
 const slots = { A: null, B: null };
@@ -35,7 +38,7 @@ function sendPatch() {
   pending = true;
   requestAnimationFrame(() => {
     pending = false;
-    const patch = buildPatch(state.macros, state.voicing);
+    const patch = buildPatch(state.macros, state.voicing, state.base);
     if (audio) audio.node.port.postMessage({ type: 'patch', patch });
     renderInfo(patch);
   });
@@ -116,7 +119,15 @@ function attachDrag(el, i) {
 function setKnob(i, v, source) {
   v = Math.min(1, Math.max(0, v));
   const prev = state.macros[i];
+  const wasLib = engineOf(state.macros).library;
+  const prevVoice = voiceIndex(state.macros);
   state.macros[i] = v;
+  const isLib = engineOf(state.macros).library;
+  if (i === K.engine && isLib !== wasLib) {
+    if (isLib) { neutralise(state.macros); selectVoice(); } else state.base = null;
+  } else if (i === K.algo && isLib && voiceIndex(state.macros) !== prevVoice) {
+    selectVoice();
+  }
   if (i === K.go) {
     if (prev < 0.5 && v >= 0.5) fire();
   } else if (i === K.morph) {
@@ -124,7 +135,7 @@ function setKnob(i, v, source) {
     if (r) applySound(r, false);
   }
   // Labels like "DX 5" or ms values depend on the engine.
-  if (i === K.engine) renderAll(); else renderKnob(i);
+  if (i === K.engine || i === K.algo) renderAll(); else renderKnob(i);
   sendPatch();
 }
 
@@ -149,7 +160,14 @@ function unpickChanged(oldM, newM) {
 }
 
 // ---------- sounds, history ----------
-function snapshot() { return { macros: state.macros.slice(), voicing: structuredClone(state.voicing), seed: state.seed }; }
+function snapshot() {
+  return { macros: state.macros.slice(), voicing: structuredClone(state.voicing), seed: state.seed, base: state.base && structuredClone(state.base) };
+}
+
+function selectVoice() {
+  const idx = voiceIndex(state.macros);
+  state.base = idx >= 0 ? structuredClone(library.voices[idx]) : null;
+}
 
 function applySound(s, record = true) {
   if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
@@ -157,6 +175,7 @@ function applySound(s, record = true) {
   // Keep the Random row as the performer has it.
   for (let i = 0; i < 18; i++) state.macros[i] = s.macros[i];
   state.voicing = structuredClone(s.voicing);
+  state.base = s.base ? structuredClone(s.base) : null;
   if (s.seed !== undefined) state.seed = s.seed;
   unpickChanged(old, state.macros);
   renderAll();
@@ -202,7 +221,8 @@ function renderInfo(p) {
   document.getElementById('info').innerHTML =
     `<span>${p.engine}</span><span>DX7 algorithm ${p.algoNum}</span>` +
     `<span>carriers OP${carriers.join(', OP')}</span><span>ratios OP1-6: ${ratios}</span>` +
-    `<span>method: ${methodOf(state.macros)}</span>`;
+    `<span>method: ${methodOf(state.macros)}</span>` +
+    (library.voices.length ? `<span>library: ${library.voices.length} DX7 voices</span>` : '');
 }
 
 const statusEl = document.getElementById('status');
@@ -247,6 +267,39 @@ document.getElementById('storeB').addEventListener('click', () => store('B'));
 document.getElementById('learn').addEventListener('click', () => {
   if (midi.learning) midi.stopLearn(); else midi.startLearn();
 });
+
+// ---------- DX7 banks ----------
+const LIB_KEY = 'fmez.library.v1';
+async function loadFiles(files) {
+  let added = 0;
+  for (const f of files) {
+    const voices = parseSysex(new Uint8Array(await f.arrayBuffer()));
+    library.voices.push(...voices);
+    added += voices.length;
+  }
+  if (!added) { setStatus('No DX7 voices found in that file'); return; }
+  library.voices = library.voices.slice(-1024);
+  try { localStorage.setItem(LIB_KEY, JSON.stringify(library.voices)); } catch { /* too big or blocked */ }
+  const first = library.voices.length - added;
+  const libIdx = ENGINES.findIndex((e) => e.library);
+  history.push(snapshot()); future = [];
+  const old = state.macros.slice();
+  state.macros[K.engine] = (libIdx + 0.5) / ENGINES.length;
+  state.macros[K.algo] = (first + 0.5) / library.voices.length;
+  neutralise(state.macros);
+  selectVoice();
+  unpickChanged(old, state.macros);
+  renderAll(); sendPatch(); updateButtons();
+  setStatus(`Loaded ${added} DX7 voices. Algorithm knob picks the voice; Go mutates it.`);
+}
+try { library.voices = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch { /* none saved */ }
+
+const fileInput = document.getElementById('file');
+document.getElementById('load').addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
+window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('drop'); });
+window.addEventListener('dragleave', () => document.body.classList.remove('drop'));
+window.addEventListener('drop', (e) => { e.preventDefault(); document.body.classList.remove('drop'); loadFiles([...e.dataTransfer.files]); });
 
 renderAll();
 updateButtons();

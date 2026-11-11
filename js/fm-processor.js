@@ -63,7 +63,8 @@ const MAX_VOICES = 8;
 class Env {
   constructor() { this.stage = 0; this.value = 0; }
   set(p, sr) {
-    this.atkInc = 1 / Math.max(1, p.a * sr);
+    // At least 2 ms: an instant attack starts the wave with a corner, which clicks.
+    this.atkInc = 1 / Math.max(0.002 * sr, p.a * sr);
     this.decCoef = Math.exp(-1 / Math.max(1, p.d * sr / 4.6));
     this.relCoef = Math.exp(-1 / Math.max(1, p.r * sr / 4.6));
     this.sus = p.s;
@@ -99,6 +100,11 @@ class Voice {
     this.pitchEnv = 0;
     this.glide = 0;
     this.age = 0;
+    this.gain = 1;        // fade used when a sounding voice is stolen
+    this.pending = null;  // { note, velocity } to start once the fade ends
+    this.incM = new Float64Array(6);
+    this.incL = new Float64Array(6);
+    this.incR = new Float64Array(6);
   }
 }
 
@@ -112,6 +118,8 @@ class FmProcessor extends AudioWorkletProcessor {
     this.counter = 0;
     this.mode = 'poly'; // poly | mono (legato) | duo
     this.held = [];     // held notes, newest last: { note, velocity }
+    this.busL = new Float32Array(3); this.busR = new Float32Array(3);
+    this.fadeStep = 1 / (0.004 * sampleRate); // 4 ms steal fade
     this.port.onmessage = (e) => this.onMessage(e.data);
   }
 
@@ -126,7 +134,7 @@ class FmProcessor extends AudioWorkletProcessor {
 
   allOff() {
     this.held = [];
-    for (const v of this.voices) { v.released = true; v.env.forEach((e) => e.gate(false)); }
+    for (const v of this.voices) { v.released = true; v.pending = null; v.env.forEach((e) => e.gate(false)); }
   }
 
   setPatch(p) {
@@ -184,15 +192,26 @@ class FmProcessor extends AudioWorkletProcessor {
     if (this.mode === 'mono') {
       const v = this.voices[0];
       if (v.active && !v.released && this.held.length > 1) return this.legato(v, note);
-      return this.trigger(v, note, velocity);
+      return v.active ? this.steal(v, note, velocity) : this.trigger(v, note, velocity);
     }
     // Poly uses all voices; duophonic only the first two.
     const pool = this.mode === 'duo' ? this.voices.slice(0, 2) : this.voices;
-    let v = pool.find((x) => x.note === note && x.active);
+    // Pick a voice: same note, else a silent one, else the oldest released,
+    // else the oldest. A voice that is still sounding fades out over 4 ms
+    // before restarting, so stealing and retriggering don't click.
+    const oldest = (list) => list.reduce((a, b) => (a.age < b.age ? a : b));
+    let v = pool.find((x) => x.active && (x.pending ? x.pending.note : x.note) === note);
     if (!v) v = pool.find((x) => !x.active);
-    if (!v) v = pool.find((x) => x.released);
-    if (!v) v = pool.reduce((a, b) => (a.age < b.age ? a : b));
-    this.trigger(v, note, velocity);
+    if (!v) { const rel = pool.filter((x) => x.released && !x.pending); if (rel.length) v = oldest(rel); }
+    if (!v) v = oldest(pool);
+    if (v.active) this.steal(v, note, velocity);
+    else this.trigger(v, note, velocity);
+  }
+
+  steal(v, note, velocity) {
+    v.pending = { note, velocity };
+    v.age = ++this.counter;
+    v.released = false;
   }
 
   // Change pitch without restarting envelopes, with a short glide.
@@ -203,6 +222,8 @@ class FmProcessor extends AudioWorkletProcessor {
 
   trigger(v, note, velocity) {
     v.glide = 0;
+    v.gain = 1;
+    v.pending = null;
     v.note = note;
     v.velocity = velocity;
     v.active = true;
@@ -238,6 +259,7 @@ class FmProcessor extends AudioWorkletProcessor {
       if (v && waiting) return this.legato(v, waiting.note);
     }
     for (const v of this.voices) {
+      if (v.pending && v.pending.note === note) { v.pending.off = true; continue; }
       if (v.active && v.note === note && !v.released) {
         v.released = true;
         v.env.forEach((e) => e.gate(false));
@@ -259,7 +281,7 @@ class FmProcessor extends AudioWorkletProcessor {
     const pitchDecay = Math.exp(-1 / Math.max(1, p.pitchEnv.decay * sr / 4.6));
     const slots = this.slots;
     const fbAmt = p.feedback * Math.PI; // radians of self-modulation
-    const busL = new Float32Array(3), busR = new Float32Array(3);
+    const busL = this.busL, busR = this.busR;
 
     for (const v of this.voices) {
       if (!v.active) continue;
@@ -271,7 +293,7 @@ class FmProcessor extends AudioWorkletProcessor {
       const va = p.velAmp ?? 0.65;
       const ampVel = 1 - va + va * vel;
       // Per-slot frequency increments (cycles per sample), computed per block.
-      const incM = new Float64Array(6), incL = new Float64Array(6), incR = new Float64Array(6);
+      const incM = v.incM, incL = v.incL, incR = v.incR;
       const pe = v.pitchEnv;
       const pitchMul = Math.pow(2, (p.pitchEnv.amount * pe + p.lfo.pitch * sin01(this.lfoPhase)) / 12);
       for (let i = 0; i < 6; i++) {
@@ -318,9 +340,21 @@ class FmProcessor extends AudioWorkletProcessor {
             v.phase[i] += incM[i];
           }
         }
-        L[j] += outL * this.carrierNorm * ampVel;
-        R[j] += outR * this.carrierNorm * ampVel;
-        if (!alive) { v.active = false; v.note = -1; break; }
+        let g = this.carrierNorm * ampVel;
+        if (v.pending) {
+          v.gain -= this.fadeStep;
+          if (v.gain <= 0) {
+            // Faded out: start the new note from silence in this voice.
+            const pn = v.pending;
+            this.trigger(v, pn.note, pn.velocity);
+            if (pn.off) { v.released = true; v.env.forEach((e) => e.gate(false)); }
+            break; // new pitch takes effect from the next block
+          }
+          g *= v.gain;
+        }
+        L[j] += outL * g;
+        R[j] += outR * g;
+        if (!alive && !v.pending) { v.active = false; v.note = -1; break; }
       }
       v.pitchEnv *= Math.pow(pitchDecay, n);
       for (let i = 0; i < 6; i++) {

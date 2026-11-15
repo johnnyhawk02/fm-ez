@@ -99,3 +99,21 @@ footer a { color: var(--ink); }
 .midibar #midilast { color: var(--ink); font-variant-numeric: tabular-nums; }
 .midibar button { padding: 3px 10px; font-size: 12px; }
 
+
+/* Nothing but the knob may move while you turn it: fixed column widths and
+   fixed-size text boxes so changing values never reflow the page. */
+main { grid-template-columns: minmax(0, 620px) minmax(0, 1fr); }
+.heads, .grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.knob .label, .knob .value { height: 1.4em; }
+.knob { user-select: none; -webkit-user-select: none; }
+.midibar { flex-wrap: nowrap; overflow: hidden; }
+.midibar > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.midibar #midiports { flex: 0 1 auto; }
+.midibar #midimap { flex: none; }
+.midibar #midilast { flex: 1 1 0; }
+.midibar button { flex: none; }
+.status { height: 2.8em; overflow: hidden; }
+@media (max-width: 560px) {
+  .midibar { flex-wrap: wrap; }
+  .midibar #midiports, .midibar #midilast { flex: 1 1 100%; }
+}

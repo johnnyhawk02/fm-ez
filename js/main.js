@@ -1,33 +1,19 @@
-import { knobsFor, defaultMacros, makeVoicing, buildPatch, methodOf, library, voiceIndexOf, routing, routingKey, SHARED, ENGINE_KNOBS, LOCKS } from './macros.js';
-import { ENGINES, LIBRARY_ENGINE } from './engines.js';
-import { knobMatrixHTML } from './matrix.js';
-import { parseSysex } from './dx7.js';
-import { isCarrier } from './engines.js';
-import { randomise, morph, rng } from './random.js';
+import { knobInfo, defaultKnobs, buildPatch, opRoles, envAt, pc4ToKnob, G } from './synth.js';
 import { Midi } from './midi.js';
 
 // ---------- state ----------
-const state = {
-  engine: 1, // Bass
-  macros: defaultMacros(1),
-  voicing: makeVoicing(rng(1)),
-  seed: 1,
-  base: null, // DX7 voice in the DX7 engine
-  volume: 0.6,
-  lock: 'None',
-};
-// Each engine remembers its own knob positions while you switch away.
-const perEngine = {};
-const knobs = () => knobsFor(state.engine);
-const knobHw = Array.from({ length: 24 }, () => ({ hw: null, picked: true })); // soft takeover per knob
-const slots = { A: null, B: null };
-const history = [];
-let future = [];
+const SAVE_KEY = 'fmez.simple.v1';
+let knobs = defaultKnobs();
+try {
+  const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
+  if (Array.isArray(saved) && saved.length === 24) knobs = saved;
+} catch { /* nothing saved */ }
+const defaults = defaultKnobs();
+const knobHw = Array.from({ length: 24 }, () => ({ hw: null, picked: true })); // soft takeover
 let audio = null;
 let voiceMode = 'poly';
 
 // ---------- audio ----------
-// Browsers only allow audio after a click or key press, so this runs from those.
 let audioStarting = null;
 function startAudio() {
   if (audio) { if (audio.ctx.state !== 'running') audio.ctx.resume(); return Promise.resolve(); }
@@ -47,25 +33,28 @@ async function createAudio() {
 }
 
 let pending = false;
+let saveTimer = 0;
 function sendPatch() {
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => {
     pending = false;
-    const patch = buildPatch(state);
-    if (audio) audio.node.port.postMessage({ type: 'patch', patch });
-    renderInfo(patch);
+    if (audio) audio.node.port.postMessage({ type: 'patch', patch: buildPatch(knobs) });
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => { try { localStorage.setItem(SAVE_KEY, JSON.stringify(knobs)); } catch { /* blocked */ } }, 300);
   });
 }
-
 const noteOn = (note, vel) => audio && audio.node.port.postMessage({ type: 'noteOn', note, velocity: vel });
 const noteOff = (note) => audio && audio.node.port.postMessage({ type: 'noteOff', note });
 
 // ---------- knobs ----------
+const ROW_CLASS = ['pitch', 'env', 'level', 'global'];
 const grid = document.getElementById('grid');
 const knobEls = Array.from({ length: 24 }, (_, i) => {
+  const info = knobInfo(i);
   const el = document.createElement('div');
   el.className = 'knob';
+  el.dataset.row = ROW_CLASS[info.row];
   el.innerHTML = `
     <svg viewBox="0 0 60 60" aria-hidden="true">
       <circle class="track" cx="30" cy="30" r="22" />
@@ -73,11 +62,20 @@ const knobEls = Array.from({ length: 24 }, (_, i) => {
       <line class="pointer" x1="30" y1="30" x2="30" y2="10" />
       <circle class="hw" r="3" cx="30" cy="8" />
     </svg>
-    <div class="label"></div>
+    ${info.row === 1 ? '<svg class="shape" viewBox="0 0 60 18" aria-hidden="true"><polyline points="" /></svg>' : ''}
+    <div class="label">${info.label}</div>
     <div class="value"></div>`;
   el.tabIndex = 0;
+  el.title = info.title || info.label;
   grid.appendChild(el);
   attachDrag(el, i);
+  return el;
+});
+
+const heads = document.getElementById('heads');
+const headEls = Array.from({ length: 6 }, (_, op) => {
+  const el = document.createElement('div');
+  heads.appendChild(el);
   return el;
 });
 
@@ -86,12 +84,20 @@ function polar(v, r) {
   return [30 + r * Math.sin(ang), 30 - r * Math.cos(ang)];
 }
 
+// Small picture of an envelope: attack, decay to sustain, hold, release.
+function shapePoints(env) {
+  const t = (s) => Math.log10(1 + s * 20) / Math.log10(1 + 4 * 20); // squash long times
+  const W = 60, H = 16, top = 1;
+  const a = t(env.a) * 16, d = t(env.d) * 16, hold = 12, r = t(env.r) * 16;
+  const y = (lvl) => top + (1 - lvl) * H;
+  const pts = [[0, y(0)], [a, y(1)], [a + d, y(env.s)], [a + d + hold, y(env.s)], [a + d + hold + r, y(0)]];
+  const span = pts[4][0] || 1;
+  return pts.map(([x, yy]) => `${((x / span) * (W - 2) + 1).toFixed(1)},${yy.toFixed(1)}`).join(' ');
+}
+
 function renderKnob(i) {
   const el = knobEls[i];
-  const k = knobs()[i];
-  el.dataset.row = k.group.toLowerCase();
-  el.querySelector('.label').textContent = k.label;
-  const v = state.macros[i];
+  const v = knobs[i];
   const [x0, y0] = polar(0, 22);
   const [x1, y1] = polar(v, 22);
   const large = v * 270 > 180 ? 1 : 0;
@@ -100,226 +106,80 @@ function renderKnob(i) {
   const ptr = el.querySelector('.pointer');
   ptr.setAttribute('x2', px); ptr.setAttribute('y2', py);
   const hw = knobHw[i];
-  const dot = el.querySelector('.hw');
   if (hw.hw !== null && !hw.picked) {
     const [hx, hy] = polar(hw.hw, 27);
+    const dot = el.querySelector('.hw');
     dot.setAttribute('cx', hx); dot.setAttribute('cy', hy);
     el.classList.add('waiting');
-  } else {
-    el.classList.remove('waiting');
-  }
-  el.querySelector('.value').textContent = k.fmt(v);
-  if (matrixKnob >= 0) refreshMatrixSoon();
-}
-function renderAll() {
-  knobEls.forEach((_, i) => renderKnob(i));
-  const rows = [...ENGINES[state.engine].rows, 'Random'];
-  document.querySelectorAll('.rows span').forEach((el, r) => { el.textContent = rows[r]; });
-  document.querySelectorAll('#engines button').forEach((b, e) => b.classList.toggle('on', e === state.engine));
+  } else el.classList.remove('waiting');
+  el.querySelector('.value').textContent = knobInfo(i).fmt(v);
+  if (i >= 6 && i < 12) el.querySelector('.shape polyline').setAttribute('points', shapePoints(envAt(v)));
+  if (i === G.algo) renderHeads();
 }
 
-// ---------- knob matrix (long press / right-click) ----------
-const ROUTING_KEY = 'fmez.routing.v1';
-try { Object.assign(routing, JSON.parse(localStorage.getItem(ROUTING_KEY)) || {}); } catch { /* none saved */ }
-const saveRouting = () => { try { localStorage.setItem(ROUTING_KEY, JSON.stringify(routing)); } catch { /* blocked */ } };
-const matrixEl = document.getElementById('matrix');
-let matrixKnob = -1;
-function openMatrix(i) {
-  matrixKnob = i;
-  matrixEl.querySelector('.panel').innerHTML = knobMatrixHTML(i, state);
-  matrixEl.hidden = false;
+function renderHeads() {
+  const roles = opRoles(knobs);
+  roles.forEach((r, op) => {
+    headEls[op].className = `head ${r.carrier ? 'carrier' : 'mod'}`;
+    headEls[op].innerHTML = `<b>OP${op + 1}</b><small>${r.carrier ? 'out' : `mod > OP${r.to.join(', ')}`}</small>`;
+    // Level means output volume for a carrier, modulation depth for a modulator.
+    knobEls[12 + op].querySelector('.label').textContent = r.carrier ? "Level" : "Depth";
+    knobEls[12 + op].classList.toggle('carrier', r.carrier);
+  });
 }
-let matrixPending = false;
-function refreshMatrixSoon() {
-  if (matrixPending) return;
-  matrixPending = true;
-  requestAnimationFrame(() => { matrixPending = false; refreshMatrix(); });
-}
-function closeMatrix() { matrixKnob = -1; matrixEl.hidden = true; }
-function refreshMatrix() {
-  if (matrixKnob < 0) return;
-  // Don't rebuild while a depth slider is being dragged.
-  if (matrixEl.contains(document.activeElement) && document.activeElement.type === 'range') return;
-  matrixEl.querySelector('.panel').innerHTML = knobMatrixHTML(matrixKnob, state);
-}
-matrixEl.addEventListener('pointerdown', (e) => { if (e.target === matrixEl) closeMatrix(); });
-window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMatrix(); });
-matrixEl.addEventListener('input', (e) => {
-  if (e.target.type !== 'range') return;
-  const id = routingKey(state.engine, knobs()[matrixKnob].type);
-  routing[id] = routing[id] || [1, 1, 1, 1, 1, 1];
-  routing[id][+e.target.dataset.op] = e.target.value / 100;
-  e.target.nextElementSibling.textContent = `${e.target.value}%`;
-  sendPatch();
-});
-matrixEl.addEventListener('change', (e) => {
-  if (e.target.type !== 'range') return;
-  const id = routingKey(state.engine, knobs()[matrixKnob].type);
-  if (routing[id] && routing[id].every((w) => w === 1)) delete routing[id];
-  saveRouting();
-  e.target.blur();
-  refreshMatrix();
-});
-matrixEl.addEventListener('click', (e) => {
-  if (!e.target.classList.contains('reset-routing')) return;
-  delete routing[routingKey(state.engine, knobs()[matrixKnob].type)];
-  saveRouting(); sendPatch(); refreshMatrix();
-});
+function renderAll() { knobEls.forEach((_, i) => renderKnob(i)); renderHeads(); }
 
 function attachDrag(el, i) {
-  let startY = 0, startV = 0, pressTimer = null, moved = false;
+  let startY = 0, startV = 0;
   el.addEventListener('pointerdown', (e) => {
-    if (e.button === 2) return;
     startAudio();
     el.setPointerCapture(e.pointerId);
-    startY = e.clientY; startV = state.macros[i]; moved = false;
+    startY = e.clientY; startV = knobs[i];
     el.classList.add('active');
-    // Hold still for half a second to open the matrix.
-    clearTimeout(pressTimer);
-    pressTimer = setTimeout(() => {
-      if (moved) return;
-      if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
-      el.classList.remove('active');
-      openMatrix(i);
-    }, 500);
   });
   el.addEventListener('pointermove', (e) => {
     if (!el.hasPointerCapture(e.pointerId)) return;
-    if (Math.abs(e.clientY - startY) > 4) { moved = true; clearTimeout(pressTimer); }
-    if (!moved) return;
     const fine = e.shiftKey ? 0.2 : 1;
-    setKnob(i, startV + ((startY - e.clientY) / 200) * fine, 'ui');
+    setKnob(i, startV + ((startY - e.clientY) / 200) * fine);
   });
-  el.addEventListener('contextmenu', (e) => { e.preventDefault(); openMatrix(i); });
-  const end = (e) => { clearTimeout(pressTimer); el.classList.remove('active'); if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); };
+  const end = (e) => { el.classList.remove('active'); if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId); };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
-  el.addEventListener('dblclick', () => setKnob(i, knobs()[i].def, 'ui'));
-  el.addEventListener('wheel', (e) => { e.preventDefault(); setKnob(i, state.macros[i] - Math.sign(e.deltaY) * 0.02, 'ui'); }, { passive: false });
+  el.addEventListener('dblclick', () => setKnob(i, defaults[i]));
+  el.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const steps = knobInfo(i).stepped;
+    setKnob(i, knobs[i] - Math.sign(e.deltaY) * (steps ? 1 / steps : 0.02));
+  }, { passive: false });
 }
 
-function setKnob(i, v, source) {
-  v = Math.min(1, Math.max(0, v));
-  const prev = state.macros[i];
-  const isLib = ENGINES[state.engine].library;
-  const prevVoice = voiceIndexOf(prev);
-  state.macros[i] = v;
-  if (i === 0 && isLib && voiceIndexOf(v) !== prevVoice) selectVoice();
-  if (i === SHARED.go) {
-    if (prev < 0.5 && v >= 0.5) fire();
-  } else if (i === SHARED.morph) {
-    const r = morph(state, slots, v);
-    if (r) applySound(r, false);
-  }
+function setKnob(i, v) {
+  knobs[i] = Math.min(1, Math.max(0, v));
   renderKnob(i);
   sendPatch();
 }
 
-// MIDI CC with soft takeover: a knob only grabs the value once the hardware
-// passes the current setting, so randomising never causes jumps.
-function hwKnob(i, v) {
+// MIDI CC with soft takeover: a knob only follows the hardware once the
+// hardware passes the current setting, so nothing jumps.
+function hwKnob(pc4Index, v) {
+  const i = pc4ToKnob(pc4Index);
   const h = knobHw[i];
-  const cur = state.macros[i];
+  const cur = knobs[i];
   const prev = h.hw;
   h.hw = v;
-  if (knobs()[i].perform) h.picked = true;
   if (!h.picked) {
     const crossed = prev !== null && (prev - cur) * (v - cur) <= 0;
     if (crossed || Math.abs(v - cur) < 0.03) h.picked = true;
   }
-  if (h.picked) setKnob(i, v, 'hw');
+  if (h.picked) setKnob(i, v);
   else renderKnob(i);
 }
 
-function unpickChanged(oldM, newM) {
-  newM.forEach((v, i) => { if (Math.abs(v - oldM[i]) > 1e-6 && i < ENGINE_KNOBS) knobHw[i].picked = false; });
-}
-
-// ---------- engines ----------
-function selectEngine(e, record = true) {
-  if (e === state.engine || !ENGINES[e]) return;
-  if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
-  perEngine[state.engine] = { macros: state.macros.slice(0, ENGINE_KNOBS), base: state.base };
-  const old = state.macros.slice();
-  const saved = perEngine[e];
-  const fresh = defaultMacros(e);
-  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = saved ? saved.macros[i] : fresh[i];
-  state.engine = e;
-  state.base = saved ? saved.base : null;
-  if (ENGINES[e].library && !state.base) selectVoice();
-  unpickChanged(old, state.macros);
-  renderAll(); sendPatch(); updateButtons();
-  setStatus(`Engine: ${ENGINES[e].name}`);
-}
-
-// ---------- sounds, history ----------
-function snapshot() {
-  return { engine: state.engine, macros: state.macros.slice(), voicing: structuredClone(state.voicing), seed: state.seed, base: state.base && structuredClone(state.base) };
-}
-
-function selectVoice() {
-  const idx = voiceIndexOf(state.macros[0]);
-  state.base = idx >= 0 ? structuredClone(library.voices[idx]) : null;
-}
-
-function applySound(s, record = true) {
-  if (record) { history.push(snapshot()); if (history.length > 32) history.shift(); future = []; }
-  const old = state.macros.slice();
-  if (s.engine !== undefined && s.engine !== state.engine) {
-    perEngine[state.engine] = { macros: state.macros.slice(0, ENGINE_KNOBS), base: state.base };
-    state.engine = s.engine;
-  }
-  // Keep the Random row as the performer has it.
-  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = s.macros[i];
-  state.voicing = structuredClone(s.voicing);
-  state.base = s.base ? structuredClone(s.base) : null;
-  if (s.seed !== undefined) state.seed = s.seed;
-  unpickChanged(old, state.macros);
-  renderAll();
-  sendPatch();
-  updateButtons();
-}
-
-function fire() {
-  const seed = (Math.random() * 2 ** 32) >>> 0;
-  const r = randomise(state, slots, seed, state.lock);
-  applySound({ ...r, seed });
-  setStatus(`${r.method} · seed ${seed.toString(16)}`);
-}
-
-function undo() {
-  if (!history.length) return;
-  future.push(snapshot());
-  applySound(history.pop(), false);
-}
-function redo() {
-  if (!future.length) return;
-  history.push(snapshot());
-  applySound(future.pop(), false);
-}
-
-function store(slot) {
-  slots[slot] = snapshot();
-  updateButtons();
-  setStatus(`Stored ${slot}${slots.A && slots.B ? ' · Morph and Breed now use A and B' : ''}`);
-}
-
-function updateButtons() {
-  document.getElementById('undo').disabled = !history.length;
-  document.getElementById('redo').disabled = !future.length;
-  document.getElementById('storeA').classList.toggle('filled', !!slots.A);
-  document.getElementById('storeB').classList.toggle('filled', !!slots.B);
-}
-
-// ---------- info ----------
-function renderInfo(p) {
-  const carriers = [0, 1, 2, 3, 4, 5].filter((i) => isCarrier(p.algorithm, i)).map((i) => i + 1);
-  const ratios = p.ops.map((o, i) => `${carriers.includes(i + 1) ? '<b>' : ''}${o.ratio.toFixed(2)}${carriers.includes(i + 1) ? '</b>' : ''}`).join(' · ');
-  document.getElementById('info').innerHTML =
-    `<span>${p.engine}</span><span>DX7 algorithm ${p.algoNum}</span>` +
-    `<span>carriers OP${carriers.join(', OP')}</span><span>ratios OP1-6: ${ratios}</span>` +
-    `<span>method: ${methodOf(state.macros)}</span>` +
-    (library.voices.length ? `<span>library: ${library.voices.length} DX7 voices</span>` : '');
+function initSound() {
+  knobs = defaultKnobs();
+  knobHw.forEach((h) => { h.picked = h.hw === null; });
+  renderAll(); sendPatch();
+  setStatus('Init sound');
 }
 
 const statusEl = document.getElementById('status');
@@ -347,7 +207,7 @@ window.addEventListener('keyup', (e) => {
   if (held.has(k)) { noteOff(held.get(k)); held.delete(k); }
 });
 
-// ---------- buttons, midi ----------
+// ---------- MIDI ----------
 const midi = new Midi({
   onNoteOn: (n, v) => {
     if (!audio || audio.ctx.state !== 'running') setStatus('MIDI note received. Click the page once to turn on audio.');
@@ -356,8 +216,8 @@ const midi = new Midi({
   onNoteOff: noteOff,
   onKnob: hwKnob,
   onStatus: setStatus,
-  onLearnStep: (i) => knobEls.forEach((el, k) => el.classList.toggle('learn', k === i)),
-  onProgram: (n) => { if (n < ENGINES.length) selectEngine(n); },
+  onLearnStep: (n) => knobEls.forEach((el, k) => el.classList.toggle('learn', n >= 0 && k === pc4ToKnob(n))),
+  onProgram: () => {},
   onDiag: renderMidiBar,
 });
 
@@ -383,49 +243,16 @@ function renderMidiBar(d) {
 }
 document.getElementById('midiconnect').addEventListener('click', () => midi.start());
 document.getElementById('midireset').addEventListener('click', () => midi.useDefault());
-// MIDI is requested straight away (Chrome may ask for permission), so it works
-// whichever way audio gets started.
 midi.start();
 
+// ---------- buttons ----------
 document.getElementById('start').addEventListener('click', () => startAudio());
-// Any first click or key press turns audio on.
 window.addEventListener('pointerdown', () => startAudio(), { once: true });
 window.addEventListener('keydown', () => startAudio(), { once: true });
-document.getElementById('go').addEventListener('click', () => { startAudio(); fire(); });
-document.getElementById('undo').addEventListener('click', undo);
-document.getElementById('redo').addEventListener('click', redo);
-document.getElementById('storeA').addEventListener('click', () => store('A'));
-document.getElementById('storeB').addEventListener('click', () => store('B'));
+document.getElementById('init').addEventListener('click', initSound);
 document.getElementById('learn').addEventListener('click', () => {
   if (midi.learning) midi.stopLearn(); else midi.startLearn();
 });
-
-// ---------- DX7 banks ----------
-const LIB_KEY = 'fmez.library.v1';
-async function loadFiles(files) {
-  let added = 0;
-  for (const f of files) {
-    const voices = parseSysex(new Uint8Array(await f.arrayBuffer()));
-    library.voices.push(...voices);
-    added += voices.length;
-  }
-  if (!added) { setStatus('No DX7 voices found in that file'); return; }
-  library.voices = library.voices.slice(-1024);
-  try { localStorage.setItem(LIB_KEY, JSON.stringify(library.voices)); } catch { /* too big or blocked */ }
-  const first = library.voices.length - added;
-  history.push(snapshot()); future = [];
-  selectEngine(LIBRARY_ENGINE, false);
-  const old = state.macros.slice();
-  const fresh = defaultMacros(LIBRARY_ENGINE);
-  for (let i = 0; i < ENGINE_KNOBS; i++) state.macros[i] = fresh[i];
-  state.macros[0] = (first + 0.5) / library.voices.length;
-  selectVoice();
-  unpickChanged(old, state.macros);
-  renderAll(); sendPatch(); updateButtons();
-  setStatus(`Loaded ${added} DX7 voices. Knob 1 picks the voice; Go mutates it.`);
-}
-try { library.voices = JSON.parse(localStorage.getItem(LIB_KEY)) || []; } catch { /* none saved */ }
-
 document.querySelectorAll('#modes button').forEach((btn) => btn.addEventListener('click', () => {
   voiceMode = btn.dataset.mode;
   document.querySelectorAll('#modes button').forEach((b) => b.classList.toggle('on', b === btn));
@@ -433,29 +260,4 @@ document.querySelectorAll('#modes button').forEach((btn) => btn.addEventListener
   setStatus(`Voice mode: ${btn.textContent}`);
 }));
 
-const fileInput = document.getElementById('file');
-document.getElementById('load').addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => { loadFiles([...fileInput.files]); fileInput.value = ''; });
-window.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('drop'); });
-window.addEventListener('dragleave', () => document.body.classList.remove('drop'));
-window.addEventListener('drop', (e) => { e.preventDefault(); document.body.classList.remove('drop'); loadFiles([...e.dataTransfer.files]); });
-
-// Engine switch, lock and volume (on screen; MIDI program change 1-7 also picks the engine).
-const enginesEl = document.getElementById('engines');
-ENGINES.forEach((e, idx) => {
-  const b = document.createElement('button');
-  b.textContent = e.name;
-  b.title = `MIDI program change ${idx + 1}`;
-  b.addEventListener('click', () => { startAudio(); selectEngine(idx); });
-  enginesEl.appendChild(b);
-});
-const lockEl = document.getElementById('lock');
-LOCKS.forEach((l) => { const o = document.createElement('option'); o.value = o.textContent = l; lockEl.appendChild(o); });
-lockEl.addEventListener('change', () => { state.lock = lockEl.value; setStatus(`Lock rows: ${state.lock}`); });
-const volEl = document.getElementById('volume');
-volEl.value = state.volume * 100;
-volEl.addEventListener('input', () => { state.volume = volEl.value / 100; sendPatch(); });
-
 renderAll();
-updateButtons();
-sendPatch();

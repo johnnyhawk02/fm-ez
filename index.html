@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>FM EZ</h1>
-    <p class="sub">Six-operator FM on 24 knobs</p>
+    <p class="sub">Six operators, 24 knobs</p>
     <button id="start" class="primary">Start audio + MIDI</button>
   </header>
 
@@ -23,42 +23,30 @@
   </div>
 
   <main>
-    <div class="rows">
-      <span>Tone</span><span>Tone</span><span>Envelope</span><span>Motion</span><span>Stereo</span><span>Random</span>
+    <div class="board">
+      <div id="heads" class="heads"></div>
+      <div class="rows"><span>Pitch</span><span>Envelope</span><span>Level</span><span>Global</span></div>
+      <div id="grid" class="grid"></div>
     </div>
-    <div id="grid" class="grid"></div>
 
     <div class="side">
-    <div id="engines" class="seg engines" role="group" aria-label="Engine"></div>
-    <div class="controls">
-      <label>Lock rows <select id="lock"></select></label>
-      <label>Volume <input id="volume" type="range" min="0" max="100" /></label>
-    </div>
-    <div class="actions">
       <div id="modes" class="seg" role="group" aria-label="Voice mode">
         <button data-mode="poly" class="on">Poly</button><button data-mode="mono">Mono legato</button><button data-mode="duo">Duo</button>
       </div>
-      <button id="go" class="primary">Go</button>
-      <button id="undo">Undo</button>
-      <button id="redo">Redo</button>
-      <button id="storeA">Store A</button>
-      <button id="storeB">Store B</button>
-      <button id="learn">Learn PC4</button>
-      <button id="load">Load DX7 .syx</button>
-      <input id="file" type="file" accept=".syx,.SYX,application/octet-stream" multiple hidden />
-    </div>
-
-    <div id="info" class="info"></div>
-    <div id="status" class="status">Pick an engine, then play with your keyboard (A W S E D F ...) or a MIDI keyboard.</div>
+      <div class="actions">
+        <button id="init">Init sound</button>
+        <button id="learn">Learn PC4</button>
+      </div>
+      <div id="status" class="status">Play with your keyboard (A W S E D F ...) or a MIDI keyboard.</div>
     </div>
   </main>
 
   <footer>
-    Drag knobs up and down (Shift for fine), scroll to nudge, double-click to reset, long-press or right-click to see and edit what a knob controls.
-    Drop DX7 .syx banks anywhere on the page. A ring dot means your PC4 knob is somewhere else: turn it past the value to pick it up.
+    Drag knobs up and down (Shift for fine), scroll to nudge, double-click to reset.
+    The PC4 is this grid turned on its side: each PC4 row is one operator (Pitch, Envelope, Level), and its 4th knob is a Global.
+    A ring dot means your PC4 knob is somewhere else: turn it past the value to pick it up.
+    The earlier version with engines and randomising is at <a href="v1/">v1</a>.
   </footer>
-
-  <div id="matrix" class="matrix" hidden><div class="panel" role="dialog" aria-label="Knob matrix"></div></div>
 
   <script type="module" src="js/main.js"></script>
 </body>
